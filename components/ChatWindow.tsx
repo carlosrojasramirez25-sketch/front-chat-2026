@@ -608,9 +608,9 @@ export default function ChatWindow({
           return (
             <div
               key={msg.id}
-              className={`group flex flex-col max-w-[75%] transition-transform duration-200 ${
+              className={`group flex flex-col max-w-[75%] ${
                 isMe ? 'ml-auto items-end' : 'mr-auto items-start'
-              } ${isSelected ? 'scale-[1.02]' : ''}`}
+              }`}
             >
               {!isMe && (
                 <span className="text-[10px] font-bold text-zinc-500 mb-1.5 px-1">
@@ -633,7 +633,7 @@ export default function ChatWindow({
                 )}
 
                 <div
-                  className={`rounded-2xl text-sm shadow-md transition-all duration-200 ${
+                  className={`rounded-2xl text-sm shadow-md transition-colors duration-200 ${
                     isSticker
                       ? 'bg-transparent shadow-none p-1'
                       : msg.type === 'image'
@@ -643,12 +643,12 @@ export default function ChatWindow({
                     isSticker
                       ? ''
                       : isMe
-                      ? 'bg-gradient-to-tr from-violet-600 to-fuchsia-600 text-white rounded-tr-none'
+                      ? isSelected
+                        ? 'bg-gradient-to-tr from-violet-400 to-fuchsia-400 text-white rounded-tr-none'
+                        : 'bg-gradient-to-tr from-violet-600 to-fuchsia-600 text-white rounded-tr-none'
+                      : isSelected
+                      ? 'bg-violet-950 text-zinc-100 rounded-tl-none border border-violet-500'
                       : 'bg-zinc-900 text-zinc-100 rounded-tl-none border border-zinc-800'
-                  } ${
-                    isSelected && !isSticker
-                      ? 'ring-2 ring-violet-400 ring-offset-2 ring-offset-zinc-950 shadow-lg shadow-violet-500/30'
-                      : ''
                   }`}
                   onTouchStart={() => !isSticker && startLongPress(msg)}
                   onTouchEnd={cancelLongPress}
