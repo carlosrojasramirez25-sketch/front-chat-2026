@@ -614,10 +614,10 @@ export default function ChatWindow({
             type="button"
             onClick={() => fileInputRef.current?.click()}
             disabled={isUploadingImage}
-            className="p-2 text-zinc-300 hover:text-violet-400 hover:bg-zinc-800 rounded-xl transition-all shrink-0 self-end mb-0.5 disabled:opacity-40 disabled:cursor-not-allowed"
+            className="p-2 bg-zinc-800 text-violet-400 hover:bg-violet-600 hover:text-white rounded-xl transition-all shrink-0 self-end mb-0.5 disabled:opacity-40 disabled:cursor-not-allowed"
             title="Adjuntar imagen"
           >
-            <ImagePlus className="w-4 h-4" />
+            <ImagePlus className="w-5 h-5" />
           </button>
 
           <textarea
