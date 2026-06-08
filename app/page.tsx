@@ -22,6 +22,7 @@ export interface Conversation {
     id: number;
     name: string;
     email: string;
+    avatar?: string;
   };
   lastMessage?: string;
   updatedAt?: string;
@@ -63,6 +64,24 @@ function normalizeUrl(url: string) {
   return u;
 }
 
+function loadAliasesFromStorage(userId: number): Record<number, string> {
+  try {
+    const raw = localStorage.getItem(`chat_aliases_${userId}`);
+    return raw ? JSON.parse(raw) : {};
+  } catch {
+    return {};
+  }
+}
+
+function loadContactAvatarsFromStorage(userId: number): Record<number, string> {
+  try {
+    const raw = localStorage.getItem(`chat_contact_avatars_${userId}`);
+    return raw ? JSON.parse(raw) : {};
+  } catch {
+    return {};
+  }
+}
+
 // ─── Component ───────────────────────────────────────────────────────────────
 
 export default function Home() {
@@ -78,13 +97,29 @@ export default function Home() {
   useEffect(() => {
     activeRoomIdRef.current = activeRoomId;
   }, [activeRoomId]);
-  
+
   const [socketConnected, setSocketConnected] = useState(false);
   const socketRef = useRef<Socket | null>(null);
 
-  // ── Conversations list (hoisted from Sidebar) ─────────────────────────────
+  // ── Conversations list ────────────────────────────────────────────────────
   const [conversations, setConversations] = useState<Conversation[]>([]);
   const [loadingConvos, setLoadingConvos] = useState(false);
+
+  // ── Aliases (lifted so both Sidebar and ChatWindow share the same state) ─
+  const [aliases, setAliases] = useState<Record<number, string>>({});
+
+  // ── Contact avatars (local photo overrides per contact) ──────────────────
+  const [contactAvatars, setContactAvatars] = useState<Record<number, string>>({});
+
+  // ── User presence ─────────────────────────────────────────────────────────
+  const [userStatuses, setUserStatuses] = useState<Record<number, { status: string; lastSeenAt: string | null }>>({});
+
+  // Sync aliases to localStorage whenever they change
+  useEffect(() => {
+    if (user && mounted) {
+      localStorage.setItem(`chat_aliases_${user.id}`, JSON.stringify(aliases));
+    }
+  }, [aliases, user, mounted]);
 
   // ── Load conversations from REST ──────────────────────────────────────────
   const loadConversations = useCallback(async (userId: number, currentToken: string, currentApiUrl: string) => {
@@ -103,7 +138,7 @@ export default function Home() {
         return {
           id: convo.id,
           participant: other?.users
-            ? { id: other.users.id, name: other.users.name || other.users.email.split('@')[0], email: other.users.email }
+            ? { id: other.users.id, name: other.users.name || other.users.email.split('@')[0], email: other.users.email, avatar: other.users.avatar_url ?? undefined }
             : { id: 0, name: `Chat #${convo.id}`, email: '' },
           lastMessage: convo.messages?.[0]?.content ?? 'No messages yet',
           updatedAt: convo.updated_at ?? new Date().toISOString(),
@@ -127,7 +162,6 @@ export default function Home() {
     const storedSocketUrl = localStorage.getItem('chat_socket_url');
 
     const resolvedApiUrl = storedApiUrl ?? 'http://localhost:3000';
-    const resolvedSocketUrl = storedSocketUrl ?? 'http://localhost:3000';
 
     if (storedApiUrl) setApiUrl(storedApiUrl);
     if (storedSocketUrl) setSocketUrl(storedSocketUrl);
@@ -143,6 +177,8 @@ export default function Home() {
           id: uid,
         };
         setUser(userData);
+        setAliases(loadAliasesFromStorage(uid));
+        setContactAvatars(loadContactAvatarsFromStorage(uid));
         loadConversations(uid, storedToken, resolvedApiUrl);
 
         const storedActiveRoom = localStorage.getItem('chat_active_room_id');
@@ -173,7 +209,6 @@ export default function Home() {
 
     const onConnect = () => {
       setSocketConnected(true);
-      // Belt-and-suspenders: also emit registerUser in case query param missed
       socketInstance.emit('registerUser', user.id);
       if (activeRoomIdRef.current !== null) socketInstance.emit('joinRoom', activeRoomIdRef.current);
     };
@@ -181,7 +216,6 @@ export default function Home() {
     const onDisconnect = () => setSocketConnected(false);
     const onConnectError = () => setSocketConnected(false);
 
-    // ── Real-time: new conversation created by the OTHER user ──────────────
     const onConversationCreated = (convo: Conversation) => {
       setConversations((prev) => {
         if (prev.some((c) => c.id === convo.id)) return prev;
@@ -189,7 +223,6 @@ export default function Home() {
       });
     };
 
-    // ── Real-time: update sidebar lastMessage on newMessage ────────────────
     const onNewMessage = (msg: any) => {
       setConversations((prev) =>
         prev
@@ -202,11 +235,37 @@ export default function Home() {
       );
     };
 
+    const onUserStatusChanged = (data: { userId: number; status: string; last_seen_at: string | null }) => {
+      setUserStatuses((prev) => ({
+        ...prev,
+        [data.userId]: { status: data.status, lastSeenAt: data.last_seen_at },
+      }));
+    };
+
+    const onProfilePhotoUpdate = (data: { userId: number; avatar_url: string }) => {
+      setContactAvatars((prev) => {
+        const updated = { ...prev, [data.userId]: data.avatar_url };
+        try {
+          localStorage.setItem(`chat_contact_avatars_${user.id}`, JSON.stringify(updated));
+        } catch {}
+        return updated;
+      });
+      setConversations((prev) =>
+        prev.map((c) =>
+          c.participant.id === data.userId
+            ? { ...c, participant: { ...c.participant, avatar: data.avatar_url } }
+            : c,
+        ),
+      );
+    };
+
     socketInstance.on('connect', onConnect);
     socketInstance.on('disconnect', onDisconnect);
     socketInstance.on('connect_error', onConnectError);
     socketInstance.on('conversationCreated', onConversationCreated);
     socketInstance.on('newMessage', onNewMessage);
+    socketInstance.on('userStatusChanged', onUserStatusChanged);
+    socketInstance.on('profilePhotoUpdate', onProfilePhotoUpdate);
 
     if (socketInstance.connected) {
       setSocketConnected(true);
@@ -219,12 +278,60 @@ export default function Home() {
       socketInstance.off('connect_error', onConnectError);
       socketInstance.off('conversationCreated', onConversationCreated);
       socketInstance.off('newMessage', onNewMessage);
+      socketInstance.off('userStatusChanged', onUserStatusChanged);
+      socketInstance.off('profilePhotoUpdate', onProfilePhotoUpdate);
       socketInstance.disconnect();
       socketRef.current = null;
       setSocketConnected(false);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [mounted, user, socketUrl]);
+
+  // ── Contact avatar management ─────────────────────────────────────────────
+  const handleSaveContactAvatar = (contactId: number, dataUrl: string) => {
+    setContactAvatars((prev) => {
+      const updated = { ...prev, [contactId]: dataUrl };
+      if (user) {
+        try {
+          localStorage.setItem(`chat_contact_avatars_${user.id}`, JSON.stringify(updated));
+        } catch {}
+      }
+      return updated;
+    });
+  };
+
+  // ── Alias management ──────────────────────────────────────────────────────
+  const handleSaveAlias = (convoId: number, newName: string) => {
+    setAliases((prev) => {
+      const updated = { ...prev };
+      if (newName.trim()) {
+        updated[convoId] = newName.trim();
+      } else {
+        delete updated[convoId];
+      }
+      return updated;
+    });
+  };
+
+  // ── Delete conversation ───────────────────────────────────────────────────
+  const handleDeleteConversation = async (convoId: number) => {
+    const base = normalizeUrl(apiUrl);
+    const res = await fetch(`${base}/api/conversations/${convoId}`, {
+      method: 'DELETE',
+      headers: { Authorization: `Bearer ${token ?? ''}` },
+    });
+    if (!res.ok) throw new Error('Failed to delete');
+    setConversations((prev) => prev.filter((c) => c.id !== convoId));
+    setAliases((prev) => {
+      const updated = { ...prev };
+      delete updated[convoId];
+      return updated;
+    });
+    if (activeRoomId === convoId) {
+      setActiveRoomId(null);
+      localStorage.removeItem('chat_active_room_id');
+    }
+  };
 
   // ── Room select ───────────────────────────────────────────────────────────
   const handleRoomSelect = (roomId: number) => {
@@ -239,6 +346,8 @@ export default function Home() {
     localStorage.setItem('chat_token', newToken);
     setToken(newToken);
     setUser(userData);
+    setAliases(loadAliasesFromStorage(userData.id));
+    setContactAvatars(loadContactAvatarsFromStorage(userData.id));
     loadConversations(userData.id, newToken, apiUrl);
   };
 
@@ -254,6 +363,8 @@ export default function Home() {
     setActiveRoomId(null);
     setSocketConnected(false);
     setConversations([]);
+    setAliases({});
+    setContactAvatars({});
     disconnectSocket();
   };
 
@@ -263,6 +374,9 @@ export default function Home() {
     setApiUrl(settings.apiUrl);
     setSocketUrl(settings.socketUrl);
   };
+
+  // ── Derived state ─────────────────────────────────────────────────────────
+  const activeConversation = conversations.find((c) => c.id === activeRoomId) ?? null;
 
   // ─── Loading ──────────────────────────────────────────────────────────────
   if (!mounted) {
@@ -320,6 +434,11 @@ export default function Home() {
         loadingConvos={loadingConvos}
         onConversationsChange={setConversations}
         socket={socketRef.current}
+        aliases={aliases}
+        onSaveAlias={handleSaveAlias}
+        onDeleteConversation={handleDeleteConversation}
+        userStatuses={userStatuses}
+        contactAvatars={contactAvatars}
       />
 
       <ChatWindow
@@ -332,6 +451,14 @@ export default function Home() {
           setActiveRoomId(null);
           localStorage.removeItem('chat_active_room_id');
         }}
+        activeConversation={activeConversation}
+        aliases={aliases}
+        onSaveAlias={handleSaveAlias}
+        onDeleteConversation={handleDeleteConversation}
+        socketConnected={socketConnected}
+        userStatuses={userStatuses}
+        contactAvatars={contactAvatars}
+        onSaveContactAvatar={handleSaveContactAvatar}
       />
     </main>
   );

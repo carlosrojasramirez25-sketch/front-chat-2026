@@ -5,7 +5,6 @@ import {
   LogOut,
   Settings,
   MessageSquare,
-  Sliders,
   Search,
   UserCheck,
   UserX,
@@ -17,6 +16,9 @@ import {
   Trash2,
   Check,
   X,
+  MoreHorizontal,
+  User,
+  Camera,
 } from 'lucide-react';
 import type { Socket } from 'socket.io-client';
 import type { Conversation } from '@/app/page';
@@ -43,7 +45,11 @@ interface SidebarProps {
   loadingConvos: boolean;
   onConversationsChange: React.Dispatch<React.SetStateAction<Conversation[]>>;
   socket: Socket | null;
-  onActiveRoomClear?: () => void;
+  aliases: Record<number, string>;
+  onSaveAlias: (convoId: number, newName: string) => void;
+  onDeleteConversation: (convoId: number) => Promise<void>;
+  userStatuses: Record<number, { status: string; lastSeenAt: string | null }>;
+  contactAvatars: Record<number, string>;
 }
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
@@ -57,26 +63,20 @@ function getInitials(nameStr: string) {
     .slice(0, 2);
 }
 
+function formatLastSeen(lastSeenAt: string | null): string {
+  if (!lastSeenAt) return 'Desconectado';
+  const diffSec = Math.floor((Date.now() - new Date(lastSeenAt).getTime()) / 1000);
+  if (diffSec < 60) return 'Hace un momento';
+  if (diffSec < 3600) return `Hace ${Math.floor(diffSec / 60)} min`;
+  if (diffSec < 86400) return `Hace ${Math.floor(diffSec / 3600)} h`;
+  return `Hace ${Math.floor(diffSec / 86400)} d`;
+}
+
 function normalizeUrl(url: string) {
   let u = url.trim();
   if (!u.startsWith('http://') && !u.startsWith('https://')) u = `http://${u}`;
   if (u.endsWith('/')) u = u.slice(0, -1);
   return u;
-}
-
-// ─── Local alias helpers (stored per user in localStorage) ────────────────────
-
-function loadAliases(userId: number): Record<number, string> {
-  try {
-    const raw = localStorage.getItem(`chat_aliases_${userId}`);
-    return raw ? JSON.parse(raw) : {};
-  } catch {
-    return {};
-  }
-}
-
-function saveAliases(userId: number, aliases: Record<number, string>) {
-  localStorage.setItem(`chat_aliases_${userId}`, JSON.stringify(aliases));
 }
 
 // ─── Component ───────────────────────────────────────────────────────────────
@@ -87,20 +87,57 @@ export default function Sidebar({
   onRoomSelect,
   onLogout,
   apiUrl,
-  socketUrl,
-  onSettingsChange,
   socketConnected,
   token,
   conversations,
   loadingConvos,
   onConversationsChange,
   socket,
-  onActiveRoomClear,
+  aliases,
+  onSaveAlias,
+  onDeleteConversation,
+  userStatuses,
+  contactAvatars,
 }: SidebarProps) {
-  // Settings panel
-  const [showSettings, setShowSettings] = useState(false);
-  const [tempApiUrl, setTempApiUrl] = useState(apiUrl);
-  const [tempSocketUrl, setTempSocketUrl] = useState(socketUrl);
+  // Header three-dot menu
+  const [showHeaderMenu, setShowHeaderMenu] = useState(false);
+  const headerMenuRef = useRef<HTMLDivElement>(null);
+
+  // Profile edit modal
+  const [showEditProfile, setShowEditProfile] = useState(false);
+  const [editProfileName, setEditProfileName] = useState('');
+  const [profileImage, setProfileImage] = useState<string | null>(null);
+  const [savedDisplayName, setSavedDisplayName] = useState('');
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
+  // Load saved avatar + display name on mount
+  useEffect(() => {
+    const savedImg = localStorage.getItem(`chat_avatar_${user.id}`);
+    if (savedImg) setProfileImage(savedImg);
+    const savedName = localStorage.getItem(`chat_display_name_${user.id}`);
+    setSavedDisplayName(savedName ?? user.name);
+  }, [user.id, user.name]);
+
+  // Resize image to max 400×400 before storing (avoids localStorage quota errors)
+  const handleImageUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = (ev) => {
+      const img = new Image();
+      img.onload = () => {
+        const MAX = 400;
+        const scale = Math.min(1, MAX / Math.max(img.width, img.height));
+        const canvas = document.createElement('canvas');
+        canvas.width = Math.round(img.width * scale);
+        canvas.height = Math.round(img.height * scale);
+        canvas.getContext('2d')!.drawImage(img, 0, 0, canvas.width, canvas.height);
+        setProfileImage(canvas.toDataURL('image/jpeg', 0.82));
+      };
+      img.src = ev.target?.result as string;
+    };
+    reader.readAsDataURL(file);
+  };
 
   // User search
   const [searchEmail, setSearchEmail] = useState('');
@@ -116,16 +153,21 @@ export default function Sidebar({
   const [confirmDeleteId, setConfirmDeleteId] = useState<number | null>(null);
 
   // ── Alias edit state ──────────────────────────────────────────────────────
-  // Map of conversationId -> local display name override
-  const [aliases, setAliases] = useState<Record<number, string>>({});
   const [editingAliasId, setEditingAliasId] = useState<number | null>(null);
   const [editingAliasValue, setEditingAliasValue] = useState('');
   const aliasInputRef = useRef<HTMLInputElement>(null);
 
-  // Load aliases from localStorage on mount
+  // Close header menu on outside click
   useEffect(() => {
-    setAliases(loadAliases(user.id));
-  }, [user.id]);
+    if (!showHeaderMenu) return;
+    const handleOutside = (e: MouseEvent) => {
+      if (headerMenuRef.current && !headerMenuRef.current.contains(e.target as Node)) {
+        setShowHeaderMenu(false);
+      }
+    };
+    document.addEventListener('mousedown', handleOutside);
+    return () => document.removeEventListener('mousedown', handleOutside);
+  }, [showHeaderMenu]);
 
   // Focus alias input when editing starts
   useEffect(() => {
@@ -142,15 +184,7 @@ export default function Sidebar({
 
   // ── Save alias ─────────────────────────────────────────────────────────────
   const handleSaveAlias = (convoId: number) => {
-    const trimmed = editingAliasValue.trim();
-    const updated = { ...aliases };
-    if (trimmed) {
-      updated[convoId] = trimmed;
-    } else {
-      delete updated[convoId]; // empty = reset to real name
-    }
-    setAliases(updated);
-    saveAliases(user.id, updated);
+    onSaveAlias(convoId, editingAliasValue.trim());
     setEditingAliasId(null);
   };
 
@@ -163,28 +197,9 @@ export default function Sidebar({
     if (deletingId === convoId) return;
     setDeletingId(convoId);
     try {
-      const base = normalizeUrl(apiUrl);
-      const res = await fetch(`${base}/api/conversations/${convoId}`, {
-        method: 'DELETE',
-        headers: { Authorization: `Bearer ${token}` },
-      });
-      if (!res.ok) throw new Error('Failed to delete');
-
-      // Remove from local list
-      onConversationsChange((prev) => prev.filter((c) => c.id !== convoId));
-
-      // Remove local alias if any
-      const updated = { ...aliases };
-      delete updated[convoId];
-      setAliases(updated);
-      saveAliases(user.id, updated);
-
-      // If this was the active room, clear it
-      if (activeRoomId === convoId && onActiveRoomClear) {
-        onActiveRoomClear();
-      }
+      await onDeleteConversation(convoId);
     } catch {
-      // silently fail — could show a toast here
+      // silently fail
     } finally {
       setDeletingId(null);
       setConfirmDeleteId(null);
@@ -280,12 +295,6 @@ export default function Sidebar({
     }
   };
 
-  const handleSaveSettings = (e: React.FormEvent) => {
-    e.preventDefault();
-    onSettingsChange({ apiUrl: tempApiUrl.trim(), socketUrl: tempSocketUrl.trim() });
-    setShowSettings(false);
-  };
-
   // ─── Render ───────────────────────────────────────────────────────────────
   return (
     <aside className={`w-full md:w-80 bg-zinc-950/80 border-r border-zinc-900 flex flex-col h-full text-zinc-100 relative overflow-hidden backdrop-blur-md ${activeRoomId !== null ? 'hidden md:flex' : 'flex'}`}>
@@ -302,63 +311,183 @@ export default function Sidebar({
             <h1 className="font-bold text-base bg-gradient-to-r from-white to-zinc-400 bg-clip-text text-transparent leading-none">
               Y&C - CHAT
             </h1>
-
           </div>
         </div>
 
-        {/* Socket Status */}
-        <div className="flex items-center gap-1.5 px-2.5 py-1 bg-zinc-900/60 border border-zinc-800 rounded-full">
-          <span className={`w-2 h-2 rounded-full ${socketConnected ? 'bg-emerald-500 animate-pulse' : 'bg-rose-500'}`} />
-          <span className="text-[10px] font-bold text-zinc-400">{socketConnected ? 'Live' : 'Offline'}</span>
+        {/* Header menu */}
+        <div className="relative" ref={headerMenuRef}>
+          <button
+            onClick={() => setShowHeaderMenu((v) => !v)}
+            className="p-2 hover:bg-zinc-900/60 text-zinc-400 hover:text-zinc-200 rounded-xl transition-all border border-transparent hover:border-zinc-800"
+            title="Menú"
+          >
+            <MoreHorizontal className="w-4 h-4" />
+          </button>
+
+          {showHeaderMenu && (
+            <div className="absolute right-0 top-full mt-1 w-52 bg-zinc-900 border border-zinc-800 rounded-xl shadow-xl z-50 overflow-hidden">
+              {/* Connection status row */}
+              <div className="flex items-center gap-2 px-3 py-2 border-b border-zinc-800/60">
+                <span className={`w-2 h-2 rounded-full shrink-0 ${socketConnected ? 'bg-emerald-500 animate-pulse' : 'bg-rose-500'}`} />
+                <span className="text-[10px] font-bold text-zinc-500 uppercase tracking-wider">
+                  {socketConnected ? 'Conectado' : 'Desconectado'}
+                </span>
+              </div>
+              <button
+                onClick={() => {
+                  setEditProfileName(user.name);
+                  setShowEditProfile((v) => !v);
+                  setShowHeaderMenu(false);
+                }}
+                className="w-full flex items-center gap-2.5 px-3 py-2.5 text-xs text-zinc-300 hover:bg-zinc-800 hover:text-white transition-all"
+              >
+                <User className="w-3.5 h-3.5 text-violet-400" />
+                Editar perfil
+              </button>
+            </div>
+          )}
         </div>
       </div>
 
-      {/* ── User Profile ── */}
-      {/* <div className="p-4 mx-4 mt-4 bg-zinc-900/40 border border-zinc-800/60 rounded-2xl flex items-center justify-between shrink-0">
-        <div className="flex items-center gap-3 min-w-0">
-          <div className="w-9 h-9 rounded-xl bg-gradient-to-tr from-violet-500 to-fuchsia-500 flex items-center justify-center font-bold text-white shadow-md text-xs shrink-0">
-            {getInitials(user.name)}
-          </div>
-          <div className="min-w-0">
-            <p className="text-sm font-semibold truncate text-zinc-200">{user.name}</p>
-            <p className="text-[10px] text-zinc-400 truncate">{user.email}</p>
-          </div>
-        </div>
-        <button
-          onClick={() => setShowSettings(!showSettings)}
-          className={`p-2 rounded-lg transition-all shrink-0 ${showSettings ? 'bg-zinc-800 text-violet-400' : 'hover:bg-zinc-900 text-zinc-400 hover:text-zinc-200'}`}
-          title="Server Settings"
+      {/* ── Edit Profile Modal (fixed overlay) ── */}
+      {showEditProfile && (
+        <div
+          className="fixed inset-0 z-50 flex items-end justify-end p-4 md:items-end md:justify-end"
+          onMouseDown={(e) => { if (e.target === e.currentTarget) setShowEditProfile(false); }}
         >
-          <Settings className="w-4 h-4" />
-        </button>
-      </div> */}
+          {/* Backdrop */}
+          <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" />
 
-      {/* ── Settings Panel ── */}
-      {showSettings && (
-        <div className="mx-4 mt-2 p-4 bg-zinc-950/90 border border-zinc-900 rounded-2xl shadow-xl shrink-0">
-          <div className="flex items-center gap-2 mb-3 text-xs font-semibold text-zinc-400 uppercase tracking-wider">
-            <Sliders className="w-3.5 h-3.5" />
-            <span>Connection Settings</span>
+          {/* Card — slides up from the bottom-right (chat input area) */}
+          <div className="relative w-full max-w-sm bg-zinc-900 border border-zinc-800 rounded-2xl shadow-2xl overflow-hidden">
+            {/* Gradient accent bar */}
+            <div className="h-1 w-full bg-gradient-to-r from-violet-600 to-fuchsia-600" />
+
+            <div className="p-6">
+              {/* Header row */}
+              <div className="flex items-center justify-between mb-6">
+                <div className="flex items-center gap-2">
+                  <User className="w-4 h-4 text-violet-400" />
+                  <h2 className="text-sm font-bold text-white">Editar perfil</h2>
+                </div>
+                <button
+                  onClick={() => setShowEditProfile(false)}
+                  className="p-1.5 hover:bg-zinc-800 text-zinc-500 hover:text-zinc-200 rounded-lg transition-all"
+                >
+                  <X className="w-4 h-4" />
+                </button>
+              </div>
+
+              {/* Avatar upload */}
+              <div className="flex flex-col items-center mb-6">
+                <button
+                  type="button"
+                  onClick={() => fileInputRef.current?.click()}
+                  className="relative group focus:outline-none"
+                >
+                  <div className="w-24 h-24 rounded-full ring-2 ring-violet-500/40 ring-offset-2 ring-offset-zinc-900 overflow-hidden">
+                    {profileImage ? (
+                      <img src={profileImage} alt="avatar" className="w-full h-full object-cover" />
+                    ) : (
+                      <div className="w-full h-full bg-gradient-to-tr from-violet-500 to-fuchsia-500 flex items-center justify-center font-bold text-white text-2xl">
+                        {(editProfileName.trim() || user.name)
+                          .split(' ').map((n) => n[0]).join('').toUpperCase().slice(0, 2)}
+                      </div>
+                    )}
+                  </div>
+                  {/* Camera overlay */}
+                  <div className="absolute inset-0 rounded-full bg-black/50 opacity-0 group-hover:opacity-100 flex items-center justify-center transition-opacity">
+                    <Camera className="w-6 h-6 text-white" />
+                  </div>
+                </button>
+                <input
+                  ref={fileInputRef}
+                  type="file"
+                  accept="image/*"
+                  className="hidden"
+                  onChange={handleImageUpload}
+                />
+                <p className="text-[10px] text-zinc-500 mt-2">Click para cambiar foto</p>
+              </div>
+
+              {/* Fields */}
+              <div className="space-y-3">
+                <div>
+                  <label className="block text-[10px] text-zinc-400 font-bold mb-1.5 uppercase tracking-wider">
+                    Nombre
+                  </label>
+                  <input
+                    autoFocus
+                    type="text"
+                    value={editProfileName}
+                    onChange={(e) => setEditProfileName(e.target.value)}
+                    onKeyDown={(e) => { if (e.key === 'Escape') setShowEditProfile(false); }}
+                    placeholder={user.name}
+                    className="w-full bg-zinc-800/60 border border-zinc-700 rounded-xl py-2.5 px-3.5 text-sm text-white placeholder-zinc-500 focus:outline-none focus:border-violet-500 focus:ring-1 focus:ring-violet-500/30 transition-all"
+                  />
+                </div>
+                <div>
+                  <label className="block text-[10px] text-zinc-400 font-bold mb-1.5 uppercase tracking-wider">
+                    Email
+                  </label>
+                  <div className="w-full bg-zinc-800/30 border border-zinc-800 rounded-xl py-2.5 px-3.5 text-sm text-zinc-500 cursor-not-allowed">
+                    {user.email}
+                  </div>
+                </div>
+              </div>
+
+              {/* Actions */}
+              <div className="flex gap-2 mt-5">
+                <button
+                  type="button"
+                  onClick={() => {
+                    try {
+                      const trimmed = editProfileName.trim();
+                      if (trimmed) {
+                        localStorage.setItem(`chat_display_name_${user.id}`, trimmed);
+                        setSavedDisplayName(trimmed);
+                      } else {
+                        localStorage.removeItem(`chat_display_name_${user.id}`);
+                        setSavedDisplayName(user.name);
+                      }
+                      if (profileImage) {
+                        localStorage.setItem(`chat_avatar_${user.id}`, profileImage);
+
+                        // 1. Persist to backend so all clients see it on next load
+                        fetch(`${normalizeUrl(apiUrl)}/api/users/${user.id}`, {
+                          method: 'PATCH',
+                          headers: {
+                            'Content-Type': 'application/json',
+                            ...(token ? { Authorization: `Bearer ${token}` } : {}),
+                          },
+                          body: JSON.stringify({ avatar_url: profileImage }),
+                        }).catch(() => {}); // silently ignore if endpoint doesn't exist
+
+                        // 2. Real-time broadcast for already-connected clients
+                        socket?.emit('profilePhotoUpdate', { userId: user.id, avatar_url: profileImage });
+                      }
+                    } catch {
+                      // localStorage quota exceeded — skip silently
+                    }
+                    setShowEditProfile(false);
+                  }}
+                  className="flex-1 bg-gradient-to-r from-violet-600 to-fuchsia-600 hover:from-violet-500 hover:to-fuchsia-500 text-white text-sm font-bold py-2.5 rounded-xl transition-all shadow-md shadow-violet-600/20 active:scale-[0.98]"
+                >
+                  Guardar cambios
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setShowEditProfile(false)}
+                  className="px-4 bg-zinc-800 hover:bg-zinc-700 text-zinc-400 hover:text-zinc-200 text-sm font-semibold py-2.5 rounded-xl transition-all"
+                >
+                  Cancelar
+                </button>
+              </div>
+            </div>
           </div>
-          <form onSubmit={handleSaveSettings} className="space-y-2">
-            <div>
-              <label className="block text-[10px] text-zinc-400 font-bold mb-1 uppercase">REST API Url</label>
-              <input type="text" value={tempApiUrl} onChange={(e) => setTempApiUrl(e.target.value)} placeholder="http://localhost:3000"
-                className="w-full bg-zinc-900/60 border border-zinc-800 rounded-lg py-1.5 px-3 text-xs text-white focus:outline-none focus:border-violet-500" />
-            </div>
-            <div>
-              <label className="block text-[10px] text-zinc-400 font-bold mb-1 uppercase">WebSocket Url</label>
-              <input type="text" value={tempSocketUrl} onChange={(e) => setTempSocketUrl(e.target.value)} placeholder="http://localhost:3000"
-                className="w-full bg-zinc-900/60 border border-zinc-800 rounded-lg py-1.5 px-3 text-xs text-white focus:outline-none focus:border-violet-500" />
-            </div>
-            <div className="flex gap-2 pt-1">
-              <button type="submit" className="flex-1 bg-violet-600 hover:bg-violet-500 text-white text-[11px] font-bold py-1.5 rounded-lg transition-all">Apply</button>
-              <button type="button" onClick={() => { setTempApiUrl(apiUrl); setTempSocketUrl(socketUrl); setShowSettings(false); }}
-                className="flex-1 bg-zinc-800 hover:bg-zinc-700 text-zinc-400 hover:text-zinc-200 text-[11px] font-bold py-1.5 rounded-lg transition-all">Cancel</button>
-            </div>
-          </form>
         </div>
       )}
+
 
       {/* ── Scrollable body ── */}
       <div className="flex-1 min-h-0 overflow-y-auto px-4 py-4 space-y-5">
@@ -440,6 +569,7 @@ export default function Sidebar({
                 const isEditingAlias = editingAliasId === convo.id;
                 const isConfirmingDelete = confirmDeleteId === convo.id;
                 const isDeleting = deletingId === convo.id;
+                const isOnline = userStatuses[convo.participant.id]?.status === 'online';
 
                 return (
                   <div key={convo.id} className="group relative">
@@ -509,8 +639,22 @@ export default function Sidebar({
                           onClick={() => onRoomSelect(convo.id)}
                           className="flex items-center gap-3 flex-1 min-w-0 text-left"
                         >
-                          <div className={`w-9 h-9 rounded-xl flex items-center justify-center font-bold text-xs shrink-0 ${isActive ? 'bg-gradient-to-tr from-violet-600 to-fuchsia-600 text-white' : 'bg-zinc-800 text-zinc-400'}`}>
-                            {getInitials(displayName)}
+                          <div className="relative shrink-0">
+                            <div className={`w-9 h-9 rounded-xl overflow-hidden flex items-center justify-center font-bold text-xs shrink-0 ${!contactAvatars[convo.participant.id] && !convo.participant.avatar ? (isActive ? 'bg-gradient-to-tr from-violet-600 to-fuchsia-600 text-white' : 'bg-zinc-800 text-zinc-400') : ''}`}>
+                              {(contactAvatars[convo.participant.id] || convo.participant.avatar) ? (
+                                <img
+                                  src={contactAvatars[convo.participant.id] || convo.participant.avatar}
+                                  alt={displayName}
+                                  className="w-full h-full object-cover"
+                                />
+                              ) : (
+                                getInitials(displayName)
+                              )}
+                            </div>
+                            <span
+                              className={`absolute -bottom-0.5 -right-0.5 w-2.5 h-2.5 rounded-full border-2 border-zinc-950 ${isOnline ? 'bg-emerald-400' : 'bg-zinc-600'}`}
+                              title={isOnline ? 'En línea' : formatLastSeen(userStatuses[convo.participant.id]?.lastSeenAt ?? null)}
+                            />
                           </div>
                           <div className="min-w-0 flex-1">
                             <p className={`text-sm font-semibold truncate ${isActive ? 'text-white' : 'text-zinc-300'}`}>
@@ -566,13 +710,44 @@ export default function Sidebar({
         </div>
       </div>
 
-      {/* ── Footer / Logout ── */}
+      {/* ── Footer ── */}
       <div className="p-4 border-t border-zinc-900 bg-zinc-950/40 shrink-0">
-        <button onClick={onLogout}
-          className="w-full flex items-center justify-center gap-2 py-3 rounded-xl border border-zinc-800 hover:border-zinc-700 bg-zinc-900/20 hover:bg-zinc-900/60 text-zinc-400 hover:text-zinc-200 text-sm font-semibold transition-all active:scale-[0.98]">
-          <LogOut className="w-4 h-4" />
-          <span>Disconnect / Logout</span>
-        </button>
+        <div className="flex items-center gap-3">
+          {/* Avatar — click to open profile edit */}
+          <button
+            onClick={() => { setEditProfileName(savedDisplayName); setShowEditProfile(true); }}
+            className="relative shrink-0 group"
+            title="Editar perfil"
+          >
+            <div className="w-10 h-10 rounded-xl overflow-hidden ring-1 ring-zinc-700 group-hover:ring-violet-500/60 transition-all">
+              {profileImage ? (
+                <img src={profileImage} alt="avatar" className="w-full h-full object-cover" />
+              ) : (
+                <div className="w-full h-full bg-gradient-to-tr from-violet-500 to-fuchsia-500 flex items-center justify-center font-bold text-white text-xs">
+                  {getInitials(savedDisplayName)}
+                </div>
+              )}
+            </div>
+            <div className="absolute inset-0 rounded-xl bg-black/50 opacity-0 group-hover:opacity-100 flex items-center justify-center transition-opacity">
+              <Camera className="w-3.5 h-3.5 text-white" />
+            </div>
+          </button>
+
+          {/* Name + email */}
+          <div className="min-w-0 flex-1">
+            <p className="text-sm font-semibold text-zinc-200 truncate leading-none">{savedDisplayName}</p>
+            <p className="text-[10px] text-zinc-500 truncate mt-0.5">{user.email}</p>
+          </div>
+
+          {/* Logout */}
+          <button
+            onClick={onLogout}
+            className="shrink-0 p-2 hover:bg-zinc-800 text-zinc-500 hover:text-red-400 rounded-xl transition-all"
+            title="Desconectar"
+          >
+            <LogOut className="w-4 h-4" />
+          </button>
+        </div>
       </div>
     </aside>
   );

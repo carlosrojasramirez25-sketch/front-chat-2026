@@ -1,19 +1,18 @@
 'use client';
 
 import { useState, useEffect, useRef } from 'react';
-import { Send, Hash, CornerDownLeft, Sparkles, MessageSquare, AlertCircle, Loader2, ChevronLeft } from 'lucide-react';
+import { Send, Hash, CornerDownLeft, MessageSquare, AlertCircle, Loader2, ChevronLeft, MoreHorizontal, Pencil, Trash2, Check, X } from 'lucide-react';
 import { Socket } from 'socket.io-client';
+import type { Conversation } from '@/app/page';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
-// The backend returns messages with `sender_id` and includes `users` (sender info)
 interface Message {
   id: string | number;
   content: string | null;
   conversation_id: number;
-  sender_id: number;            // real DB field
-  users?: { id: number; name: string; email: string }; // included relation
+  sender_id: number;
+  users?: { id: number; name: string; email: string; avatar_url?: string | null };
   created_at?: string;
-  // extras for optimistic / system messages
   _isSystem?: boolean;
 }
 
@@ -24,9 +23,26 @@ interface ChatWindowProps {
   apiUrl?: string;
   token?: string | null;
   onBack?: () => void;
+  activeConversation?: Conversation | null;
+  aliases?: Record<number, string>;
+  onSaveAlias?: (convoId: number, newName: string) => void;
+  onDeleteConversation?: (convoId: number) => void;
+  socketConnected?: boolean;
+  userStatuses?: Record<number, { status: string; lastSeenAt: string | null }>;
+  contactAvatars?: Record<number, string>;
+  onSaveContactAvatar?: (contactId: number, dataUrl: string) => void;
 }
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
+function formatLastSeen(lastSeenAt: string | null): string {
+  if (!lastSeenAt) return 'Desconectado';
+  const diffSec = Math.floor((Date.now() - new Date(lastSeenAt).getTime()) / 1000);
+  if (diffSec < 60) return 'Hace un momento';
+  if (diffSec < 3600) return `Hace ${Math.floor(diffSec / 60)} min`;
+  if (diffSec < 86400) return `Hace ${Math.floor(diffSec / 3600)} h`;
+  return `Hace ${Math.floor(diffSec / 86400)} d`;
+}
+
 function normalizeUrl(url: string) {
   let u = (url ?? 'http://localhost:3000').trim();
   if (!u.startsWith('http://') && !u.startsWith('https://')) u = `http://${u}`;
@@ -35,7 +51,21 @@ function normalizeUrl(url: string) {
 }
 
 // ─── Component ───────────────────────────────────────────────────────────────
-export default function ChatWindow({ socket, activeRoomId, currentUser, apiUrl = 'http://localhost:3000', token, onBack }: ChatWindowProps) {
+export default function ChatWindow({
+  socket,
+  activeRoomId,
+  currentUser,
+  apiUrl = 'http://localhost:3000',
+  token,
+  onBack,
+  activeConversation,
+  aliases,
+  onSaveAlias,
+  onDeleteConversation,
+  userStatuses,
+  contactAvatars,
+  onSaveContactAvatar,
+}: ChatWindowProps) {
   const [messages, setMessages] = useState<Message[]>([]);
   const [loadingHistory, setLoadingHistory] = useState(false);
   const [inputValue, setInputValue] = useState('');
@@ -45,9 +75,52 @@ export default function ChatWindow({ socket, activeRoomId, currentUser, apiUrl =
   const lastTypingEmitRef = useRef<number>(0);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 
+  // Header menu state
+  const [showMenu, setShowMenu] = useState(false);
+  const [isEditingName, setIsEditingName] = useState(false);
+  const [editingNameValue, setEditingNameValue] = useState('');
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+  const menuRef = useRef<HTMLDivElement>(null);
+  // Track rooms where we've already sent our avatar this session
+  const avatarSentRoomsRef = useRef<Set<number>>(new Set());
+
+  // Computed display name: alias takes priority over participant's real name
+  const displayName = (activeRoomId && aliases?.[activeRoomId])
+    ? aliases[activeRoomId]
+    : (activeConversation?.participant?.name ?? 'Chat');
+
+  const participantPresence = activeConversation?.participant?.id
+    ? userStatuses?.[activeConversation.participant.id]
+    : undefined;
+  const isParticipantOnline = participantPresence?.status === 'online';
+
+  const contactAvatarSrc = activeConversation?.participant?.id
+    ? (contactAvatars?.[activeConversation.participant.id] || activeConversation.participant.avatar || null)
+    : null;
+  const participantInitials = displayName.split(' ').map((n) => n[0]).join('').toUpperCase().slice(0, 2);
+
   const scrollToBottom = () => messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
 
   useEffect(() => { scrollToBottom(); }, [messages, typingUsers]);
+
+  // Reset header UI state when switching rooms
+  useEffect(() => {
+    setShowMenu(false);
+    setIsEditingName(false);
+    setShowDeleteConfirm(false);
+  }, [activeRoomId]);
+
+  // Close dropdown on outside click
+  useEffect(() => {
+    if (!showMenu) return;
+    const handleOutside = (e: MouseEvent) => {
+      if (menuRef.current && !menuRef.current.contains(e.target as Node)) {
+        setShowMenu(false);
+      }
+    };
+    document.addEventListener('mousedown', handleOutside);
+    return () => document.removeEventListener('mousedown', handleOutside);
+  }, [showMenu]);
 
   // ── Load message history when room changes ────────────────────────────────
   useEffect(() => {
@@ -68,6 +141,16 @@ export default function ChatWindow({ socket, activeRoomId, currentUser, apiUrl =
         if (!res.ok) return;
         const data: Message[] = await res.json();
         setMessages(data);
+        // Sync contact avatar from the server-authoritative avatar_url on any message
+        if (onSaveContactAvatar && activeConversation) {
+          const participantId = activeConversation.participant.id;
+          for (const m of data) {
+            if (m.sender_id === participantId && m.users?.avatar_url) {
+              onSaveContactAvatar(participantId, m.users.avatar_url);
+              break;
+            }
+          }
+        }
       } catch (err) {
         console.error('Failed to load history:', err);
       } finally {
@@ -82,12 +165,15 @@ export default function ChatWindow({ socket, activeRoomId, currentUser, apiUrl =
   useEffect(() => {
     if (!socket || !activeRoomId) return;
 
-    const handleNewMessage = (msg: Message) => {
-      console.log('newMessage received:', msg);
+    const handleNewMessage = (msg: Message & { sender_avatar?: string }) => {
       if (Number(msg.conversation_id) !== activeRoomId) return;
+      // Use server-side avatar_url first, fall back to client-piggyback sender_avatar
+      const incomingAvatar = msg.users?.avatar_url || msg.sender_avatar || null;
+      if (incomingAvatar && msg.sender_id !== currentUser.id && onSaveContactAvatar) {
+        onSaveContactAvatar(msg.sender_id, incomingAvatar);
+      }
 
       setMessages((prev) => {
-        // Replace any matching optimistic message (same sender + approximate time + same content)
         const optIdx = prev.findIndex(
           (m) =>
             String(m.id).startsWith('opt-') &&
@@ -99,7 +185,6 @@ export default function ChatWindow({ socket, activeRoomId, currentUser, apiUrl =
           next[optIdx] = msg;
           return next;
         }
-        // Deduplicate by real id
         if (prev.some((m) => m.id === msg.id)) return prev;
         return [...prev, msg];
       });
@@ -140,7 +225,6 @@ export default function ChatWindow({ socket, activeRoomId, currentUser, apiUrl =
   const handleInputChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
     setInputValue(e.target.value);
 
-    // Auto-adjust height dynamically
     if (textareaRef.current) {
       textareaRef.current.style.height = 'auto';
       textareaRef.current.style.height = `${Math.min(textareaRef.current.scrollHeight, 128)}px`;
@@ -161,7 +245,6 @@ export default function ChatWindow({ socket, activeRoomId, currentUser, apiUrl =
 
     const content = inputValue.trim();
 
-    // Optimistic message — will be replaced by the server's real message
     const optimistic: Message = {
       id: `opt-${Date.now()}`,
       content,
@@ -173,16 +256,21 @@ export default function ChatWindow({ socket, activeRoomId, currentUser, apiUrl =
     setMessages((prev) => [...prev, optimistic]);
     setInputValue('');
 
-    // Reset textarea height to default
     if (textareaRef.current) {
       textareaRef.current.style.height = 'auto';
     }
 
-    // Emit to gateway — uses `sender_id` as per CreateMessageDto
+    // Include our avatar on the first message to this room so the recipient
+    // auto-updates their contact photo without needing backend changes.
+    const myAvatar = localStorage.getItem(`chat_avatar_${currentUser.id}`);
+    const needsSendAvatar = !!myAvatar && !avatarSentRoomsRef.current.has(activeRoomId);
+    if (needsSendAvatar) avatarSentRoomsRef.current.add(activeRoomId);
+
     socket.emit('sendMessage', {
       conversation_id: activeRoomId,
       sender_id: currentUser.id,
       content,
+      ...(needsSendAvatar ? { sender_avatar: myAvatar } : {}),
     });
   };
 
@@ -190,6 +278,19 @@ export default function ChatWindow({ socket, activeRoomId, currentUser, apiUrl =
     if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleSendMessage(e); }
   };
 
+  // ── Header name edit ──────────────────────────────────────────────────────
+  const handleSaveNameEdit = () => {
+    if (activeRoomId && onSaveAlias) {
+      onSaveAlias(activeRoomId, editingNameValue);
+    }
+    setIsEditingName(false);
+  };
+
+  const handleDeleteConfirm = () => {
+    if (!activeRoomId || !onDeleteConversation) return;
+    onDeleteConversation(activeRoomId);
+    setShowDeleteConfirm(false);
+  };
 
   if (!activeRoomId) {
     return (
@@ -212,7 +313,7 @@ export default function ChatWindow({ socket, activeRoomId, currentUser, apiUrl =
     <div className={`flex-1 flex flex-col min-h-0 overflow-hidden bg-zinc-950/40 relative ${activeRoomId === null ? 'hidden md:flex' : 'flex'}`}>
       {/* Header */}
       <div className="h-20 border-b border-zinc-900 px-6 flex items-center justify-between bg-zinc-950/80 backdrop-blur-md shrink-0">
-        <div className="flex items-center gap-3">
+        <div className="flex items-center gap-3 min-w-0 flex-1">
           {onBack && (
             <button
               onClick={onBack}
@@ -222,31 +323,127 @@ export default function ChatWindow({ socket, activeRoomId, currentUser, apiUrl =
               <ChevronLeft className="w-5 h-5" />
             </button>
           )}
-          <div className="p-2.5 bg-violet-600/10 border border-violet-500/20 text-violet-400 rounded-xl shrink-0">
-            <Hash className="w-5 h-5" />
+          {/* Contact avatar — read-only, photo set by the contact themselves */}
+          <div className="w-10 h-10 rounded-xl overflow-hidden ring-1 ring-violet-500/20 shrink-0">
+            {contactAvatarSrc ? (
+              <img src={contactAvatarSrc} alt={displayName} className="w-full h-full object-cover" />
+            ) : (
+              <div className="w-full h-full bg-violet-600/20 flex items-center justify-center font-bold text-violet-300 text-sm">
+                {participantInitials || <Hash className="w-4 h-4" />}
+              </div>
+            )}
           </div>
-          <div className="min-w-0">
-            <h2 className="font-bold text-zinc-100 leading-tight truncate">{currentUser?.name}</h2>
-            <p className="text-[10px] text-zinc-500 font-semibold tracking-wider uppercase">Aqui ira cunado el usuario se conecte o se desconecte</p>
+
+          {/* Inline name editing */}
+          {isEditingName ? (
+            <div className="flex items-center gap-2 min-w-0 flex-1">
+              <input
+                autoFocus
+                value={editingNameValue}
+                onChange={(e) => setEditingNameValue(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') handleSaveNameEdit();
+                  if (e.key === 'Escape') setIsEditingName(false);
+                }}
+                placeholder={activeConversation?.participant?.name ?? 'Nombre...'}
+                className="bg-zinc-900/60 border border-violet-500/40 rounded-lg py-1 px-2 text-sm text-white focus:outline-none focus:border-violet-500 min-w-0 flex-1"
+              />
+              <button
+                onClick={handleSaveNameEdit}
+                className="shrink-0 p-1 bg-violet-600 hover:bg-violet-500 text-white rounded-lg transition-all"
+                title="Guardar"
+              >
+                <Check className="w-3.5 h-3.5" />
+              </button>
+              <button
+                onClick={() => setIsEditingName(false)}
+                className="shrink-0 p-1 hover:bg-zinc-800 text-zinc-400 hover:text-zinc-200 rounded-lg transition-all"
+                title="Cancelar"
+              >
+                <X className="w-3.5 h-3.5" />
+              </button>
+            </div>
+          ) : showDeleteConfirm ? (
+            /* Delete confirmation inline */
+            <div className="flex items-center gap-2 min-w-0 flex-1">
+              <Trash2 className="w-4 h-4 text-red-400 shrink-0" />
+              <p className="text-xs text-red-300 flex-1 truncate">¿Eliminar este chat?</p>
+              <button
+                onClick={handleDeleteConfirm}
+                className="shrink-0 flex items-center gap-1 px-2 py-1 bg-red-600 hover:bg-red-500 text-white text-[11px] font-bold rounded-lg transition-all"
+              >
+                <Check className="w-3 h-3" />
+              </button>
+              <button
+                onClick={() => setShowDeleteConfirm(false)}
+                className="shrink-0 p-1 hover:bg-zinc-800 text-zinc-400 hover:text-zinc-200 rounded-lg transition-all"
+              >
+                <X className="w-3.5 h-3.5" />
+              </button>
+            </div>
+          ) : (
+            /* Normal title */
+            <div className="min-w-0">
+              <h2 className="font-bold text-zinc-100 leading-tight truncate">{displayName}</h2>
+              <p className="text-[10px] font-semibold tracking-wider uppercase truncate flex items-center gap-1">
+                <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${isParticipantOnline ? 'bg-emerald-400' : 'bg-zinc-600'}`} />
+                <span className={isParticipantOnline ? 'text-emerald-400' : 'text-zinc-500'}>
+                  {isParticipantOnline ? 'En línea' : formatLastSeen(participantPresence?.lastSeenAt ?? null)}
+                </span>
+              </p>
+            </div>
+          )}
+        </div>
+
+        {/* Three-dot menu — hidden while editing/confirming */}
+        {!isEditingName && !showDeleteConfirm && (
+          <div className="relative shrink-0" ref={menuRef}>
+            <button
+              onClick={() => setShowMenu((v) => !v)}
+              className="p-2 hover:bg-zinc-900/60 text-zinc-400 hover:text-zinc-200 rounded-xl transition-all border border-transparent hover:border-zinc-800"
+              title="Opciones"
+            >
+              <MoreHorizontal className="w-4 h-4" />
+            </button>
+
+            {showMenu && (
+              <div className="absolute right-0 top-full mt-1 w-52 bg-zinc-900 border border-zinc-800 rounded-xl shadow-xl z-50 overflow-hidden">
+                <button
+                  onClick={() => {
+                    setEditingNameValue(activeRoomId && aliases?.[activeRoomId] ? aliases[activeRoomId] : '');
+                    setIsEditingName(true);
+                    setShowMenu(false);
+                  }}
+                  className="w-full flex items-center gap-2.5 px-3 py-2.5 text-xs text-zinc-300 hover:bg-zinc-800 hover:text-white transition-all"
+                >
+                  <Pencil className="w-3.5 h-3.5 text-violet-400" />
+                  Editar nombre
+                </button>
+                <button
+                  onClick={() => {
+                    setShowDeleteConfirm(true);
+                    setShowMenu(false);
+                  }}
+                  className="w-full flex items-center gap-2.5 px-3 py-2.5 text-xs text-zinc-300 hover:bg-red-950/40 hover:text-red-400 transition-all border-t border-zinc-800"
+                >
+                  <Trash2 className="w-3.5 h-3.5 text-red-400" />
+                  Eliminar chat
+                </button>
+              </div>
+            )}
           </div>
-        </div>
-        <div className="text-xs text-zinc-500 flex items-center gap-1.5 bg-zinc-900/40 border border-zinc-800 py-1.5 px-3 rounded-xl shrink-0">
-          <Sparkles className="w-3.5 h-3.5 text-violet-400" />
-          <span className="hidden sm:inline">Real-time via Socket.io</span>
-        </div>
+        )}
       </div>
 
       {/* Messages */}
       <div className="flex-1 min-h-0 overflow-y-auto p-6 space-y-6 scrollbar-thin">
 
-        {/* Loading history */}
         {loadingHistory && (
           <div className="flex justify-center py-8">
             <Loader2 className="w-6 h-6 animate-spin text-violet-500" />
           </div>
         )}
 
-        {/* Empty state */}
         {!loadingHistory && messages.length === 0 && (
           <div className="flex justify-center">
             <div className="flex items-center gap-2 px-4 py-2 rounded-xl bg-zinc-900/60 border border-zinc-800/60 text-xs text-zinc-400">
@@ -264,14 +461,12 @@ export default function ChatWindow({ socket, activeRoomId, currentUser, apiUrl =
               key={msg.id}
               className={`flex flex-col max-w-[75%] ${isMe ? 'ml-auto items-end' : 'mr-auto items-start'}`}
             >
-              {/* Sender name (only for the other person) */}
               {!isMe && (
                 <span className="text-[10px] font-bold text-zinc-500 mb-1.5 px-1">
                   {msg.users?.name || `User #${msg.sender_id}`}
                 </span>
               )}
 
-              {/* Bubble */}
               <div
                 className={`px-4 py-3 rounded-2xl text-sm shadow-md whitespace-pre-wrap ${
                   isMe
@@ -282,7 +477,6 @@ export default function ChatWindow({ socket, activeRoomId, currentUser, apiUrl =
                 {msg.content ?? ''}
               </div>
 
-              {/* Timestamp */}
               <span className="text-[9px] text-zinc-600 mt-1 px-1">
                 {msg.created_at
                   ? new Date(msg.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
@@ -292,7 +486,6 @@ export default function ChatWindow({ socket, activeRoomId, currentUser, apiUrl =
           );
         })}
 
-        {/* Typing indicator */}
         {typingArray.length > 0 && (
           <div className="flex items-center gap-2.5 mr-auto max-w-[75%]">
             <div className="px-4 py-3 rounded-2xl rounded-tl-none bg-zinc-900 border border-zinc-800 flex items-center gap-1.5">
@@ -328,7 +521,7 @@ export default function ChatWindow({ socket, activeRoomId, currentUser, apiUrl =
               <span>Enter to send</span>
               <CornerDownLeft className="w-2.5 h-2.5" />
             </span>
-            
+
             <button
               type="submit"
               disabled={!inputValue.trim()}
