@@ -370,7 +370,7 @@ export default function Home() {
     return (
       <div className="flex-1 flex flex-col items-center justify-center bg-zinc-950 text-zinc-100">
         <RefreshCw className="w-10 h-10 animate-spin text-violet-500" />
-        <span className="mt-4 text-sm font-semibold text-zinc-400">Loading NexusChat...</span>
+        <span className="mt-4 text-sm font-semibold text-zinc-400">Cargando Y&C - Chat...</span>
       </div>
     );
   }
@@ -388,9 +388,9 @@ export default function Home() {
           </div>
           <div>
             <h1 className="text-3xl font-extrabold bg-gradient-to-r from-white via-zinc-200 to-zinc-500 bg-clip-text text-transparent tracking-tight">
-              NexusChat
+              Y&C - CHAT
             </h1>
-            <p className="text-xs text-zinc-500 font-bold uppercase tracking-widest mt-0.5">Real-time Gateway client</p>
+            <p className="text-xs text-zinc-500 font-bold uppercase tracking-widest mt-0.5">Chat de Prueba Beta 1.0</p>
           </div>
         </div>
 
@@ -403,7 +403,7 @@ export default function Home() {
 
   // ─── Dashboard ────────────────────────────────────────────────────────────
   return (
-    <main className="flex-1 flex flex-col md:flex-row h-screen bg-zinc-950 text-zinc-100 overflow-hidden">
+    <main className="flex-1 flex flex-col md:flex-row min-h-0 bg-zinc-950 text-zinc-100 overflow-hidden">
       <Sidebar
         user={user}
         activeRoomId={activeRoomId}

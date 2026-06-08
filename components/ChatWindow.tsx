@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect, useRef } from 'react';
-import { Send, Hash, CornerDownLeft, MessageSquare, AlertCircle, Loader2, ChevronLeft, MoreHorizontal, Pencil, Trash2, Check, X } from 'lucide-react';
+import { Send, Hash, CornerDownLeft, MessageSquare, AlertCircle, Loader2, ChevronLeft, MoreHorizontal, Pencil, Trash2, Check, X, ImagePlus } from 'lucide-react';
 import { Socket } from 'socket.io-client';
 import type { Conversation } from '@/app/page';
 
@@ -9,6 +9,7 @@ import type { Conversation } from '@/app/page';
 interface Message {
   id: string | number;
   content: string | null;
+  type?: 'text' | 'image' | 'file' | 'system';
   conversation_id: number;
   sender_id: number;
   users?: { id: number; name: string; email: string; avatar_url?: string | null };
@@ -70,10 +71,14 @@ export default function ChatWindow({
   const [loadingHistory, setLoadingHistory] = useState(false);
   const [inputValue, setInputValue] = useState('');
   const [typingUsers, setTypingUsers] = useState<{ [userId: number]: { name: string; timestamp: number } }>({});
+  const [imageFile, setImageFile] = useState<File | null>(null);
+  const [imagePreview, setImagePreview] = useState<string | null>(null);
+  const [isUploadingImage, setIsUploadingImage] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const typingTimeoutRef = useRef<{ [userId: number]: NodeJS.Timeout }>({});
   const lastTypingEmitRef = useRef<number>(0);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   // Header menu state
   const [showMenu, setShowMenu] = useState(false);
@@ -238,13 +243,79 @@ export default function ChatWindow({
     }
   };
 
+  // ── Image select ──────────────────────────────────────────────────────────
+  const handleImageSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setImageFile(file);
+    const reader = new FileReader();
+    reader.onload = (ev) => setImagePreview(ev.target?.result as string);
+    reader.readAsDataURL(file);
+    if (fileInputRef.current) fileInputRef.current.value = '';
+  };
+
+  const handleRemoveImage = () => {
+    setImageFile(null);
+    setImagePreview(null);
+  };
+
   // ── Send message ──────────────────────────────────────────────────────────
-  const handleSendMessage = (e: React.FormEvent) => {
+  const handleSendMessage = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!inputValue.trim() || !activeRoomId || !socket) return;
+    if ((!inputValue.trim() && !imageFile) || !activeRoomId || !socket) return;
+
+    const myAvatar = localStorage.getItem(`chat_avatar_${currentUser.id}`);
+    const needsSendAvatar = !!myAvatar && !avatarSentRoomsRef.current.has(activeRoomId);
+    if (needsSendAvatar) avatarSentRoomsRef.current.add(activeRoomId);
+
+    if (imageFile) {
+      setIsUploadingImage(true);
+      try {
+        const base = normalizeUrl(apiUrl);
+        const formData = new FormData();
+        formData.append('file', imageFile);
+        formData.append('uploadedBy', String(currentUser.id));
+        const headers: HeadersInit = {};
+        if (token) headers['Authorization'] = `Bearer ${token}`;
+
+        const res = await fetch(`${base}/api/attachments/upload`, {
+          method: 'POST',
+          headers,
+          body: formData,
+        });
+        if (!res.ok) throw new Error('Upload failed');
+        const data = await res.json();
+        const imageUrl = `${base}${data.url}`;
+
+        const optimistic: Message = {
+          id: `opt-${Date.now()}`,
+          content: imageUrl,
+          type: 'image',
+          conversation_id: activeRoomId,
+          sender_id: currentUser.id,
+          users: { id: currentUser.id, name: currentUser.name, email: currentUser.email },
+          created_at: new Date().toISOString(),
+        };
+        setMessages((prev) => [...prev, optimistic]);
+        setImageFile(null);
+        setImagePreview(null);
+
+        socket.emit('sendMessage', {
+          conversation_id: activeRoomId,
+          sender_id: currentUser.id,
+          content: imageUrl,
+          type: 'image',
+          ...(needsSendAvatar ? { sender_avatar: myAvatar } : {}),
+        });
+      } catch (err) {
+        console.error('Image upload failed:', err);
+      } finally {
+        setIsUploadingImage(false);
+      }
+      return;
+    }
 
     const content = inputValue.trim();
-
     const optimistic: Message = {
       id: `opt-${Date.now()}`,
       content,
@@ -255,16 +326,7 @@ export default function ChatWindow({
     };
     setMessages((prev) => [...prev, optimistic]);
     setInputValue('');
-
-    if (textareaRef.current) {
-      textareaRef.current.style.height = 'auto';
-    }
-
-    // Include our avatar on the first message to this room so the recipient
-    // auto-updates their contact photo without needing backend changes.
-    const myAvatar = localStorage.getItem(`chat_avatar_${currentUser.id}`);
-    const needsSendAvatar = !!myAvatar && !avatarSentRoomsRef.current.has(activeRoomId);
-    if (needsSendAvatar) avatarSentRoomsRef.current.add(activeRoomId);
+    if (textareaRef.current) textareaRef.current.style.height = 'auto';
 
     socket.emit('sendMessage', {
       conversation_id: activeRoomId,
@@ -468,13 +530,24 @@ export default function ChatWindow({
               )}
 
               <div
-                className={`px-4 py-3 rounded-2xl text-sm shadow-md whitespace-pre-wrap ${
+                className={`rounded-2xl text-sm shadow-md ${
+                  msg.type === 'image' ? 'overflow-hidden p-0' : 'px-4 py-3 whitespace-pre-wrap'
+                } ${
                   isMe
                     ? 'bg-gradient-to-tr from-violet-600 to-fuchsia-600 text-white rounded-tr-none'
                     : 'bg-zinc-900 text-zinc-100 rounded-tl-none border border-zinc-800'
                 }`}
               >
-                {msg.content ?? ''}
+                {msg.type === 'image' && msg.content ? (
+                  <img
+                    src={msg.content}
+                    alt="imagen"
+                    className="max-w-[260px] max-h-[320px] object-cover block"
+                    onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }}
+                  />
+                ) : (
+                  msg.content ?? ''
+                )}
               </div>
 
               <span className="text-[9px] text-zinc-600 mt-1 px-1">
@@ -506,16 +579,58 @@ export default function ChatWindow({
 
       {/* Input panel */}
       <div className="p-4 border-t border-zinc-900 bg-zinc-950/80 shrink-0">
+        <input
+          ref={fileInputRef}
+          type="file"
+          accept="image/*"
+          className="hidden"
+          onChange={handleImageSelect}
+        />
+
+        {/* Image preview strip */}
+        {imagePreview && (
+          <div className="mb-2 flex items-center gap-2 px-1">
+            <div className="relative inline-block">
+              <img
+                src={imagePreview}
+                alt="preview"
+                className="h-16 w-16 object-cover rounded-xl border border-zinc-700"
+              />
+              <button
+                type="button"
+                onClick={handleRemoveImage}
+                className="absolute -top-1.5 -right-1.5 w-4 h-4 bg-zinc-800 hover:bg-red-600 text-zinc-300 hover:text-white rounded-full flex items-center justify-center transition-colors"
+              >
+                <X className="w-2.5 h-2.5" />
+              </button>
+            </div>
+            <span className="text-xs text-zinc-500 truncate max-w-[160px]">{imageFile?.name}</span>
+          </div>
+        )}
+
         <form onSubmit={handleSendMessage} className="relative flex items-end gap-2 bg-zinc-900/50 border border-zinc-800 rounded-2xl p-2 focus-within:border-violet-500/80 focus-within:ring-2 focus-within:ring-violet-500/10 transition-all">
+          {/* Image button */}
+          <button
+            type="button"
+            onClick={() => fileInputRef.current?.click()}
+            disabled={isUploadingImage}
+            className="p-2 text-zinc-500 hover:text-violet-400 hover:bg-zinc-800 rounded-xl transition-all shrink-0 self-end mb-0.5 disabled:opacity-40 disabled:cursor-not-allowed"
+            title="Adjuntar imagen"
+          >
+            <ImagePlus className="w-4 h-4" />
+          </button>
+
           <textarea
             ref={textareaRef}
             value={inputValue}
             onChange={handleInputChange}
             onKeyDown={handleKeyDown}
-            placeholder={`Message #conversation_${activeRoomId}...`}
+            placeholder={imageFile ? 'Agregar caption (opcional)...' : `Message #conversation_${activeRoomId}...`}
             rows={1}
-            className="flex-1 max-h-32 bg-transparent border-0 focus:ring-0 focus:outline-none py-2 px-3 text-sm text-zinc-100 placeholder-zinc-550 resize-none overflow-y-auto"
+            disabled={isUploadingImage}
+            className="flex-1 max-h-32 bg-transparent border-0 focus:ring-0 focus:outline-none py-2 px-3 text-sm text-zinc-100 placeholder-zinc-550 resize-none overflow-y-auto disabled:opacity-50"
           />
+
           <div className="flex items-center gap-2 pr-1.5 pb-1">
             <span className="text-[10px] text-zinc-600 hidden md:flex items-center gap-1 bg-zinc-950/80 border border-zinc-800 py-1 px-2 rounded-lg">
               <span>Enter to send</span>
@@ -524,10 +639,10 @@ export default function ChatWindow({
 
             <button
               type="submit"
-              disabled={!inputValue.trim()}
+              disabled={(!inputValue.trim() && !imageFile) || isUploadingImage}
               className="p-2.5 bg-gradient-to-tr from-violet-600 to-fuchsia-600 hover:from-violet-500 hover:to-fuchsia-500 disabled:from-zinc-900 disabled:to-zinc-900 text-white disabled:text-zinc-600 rounded-xl transition-all shadow-md shadow-violet-600/10 active:scale-[0.96] disabled:cursor-not-allowed"
             >
-              <Send className="w-4 h-4" />
+              {isUploadingImage ? <Loader2 className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4" />}
             </button>
           </div>
         </form>
