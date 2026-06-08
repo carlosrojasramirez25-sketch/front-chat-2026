@@ -368,7 +368,7 @@ export default function Home() {
   // ─── Loading ──────────────────────────────────────────────────────────────
   if (!mounted) {
     return (
-      <div className="flex-1 flex flex-col items-center justify-center bg-zinc-950 text-zinc-100">
+      <div className="fixed inset-0 flex flex-col items-center justify-center bg-zinc-950 text-zinc-100">
         <RefreshCw className="w-10 h-10 animate-spin text-violet-500" />
         <span className="mt-4 text-sm font-semibold text-zinc-400">Cargando Y&C - Chat...</span>
       </div>
@@ -378,7 +378,7 @@ export default function Home() {
   // ─── Not Logged In ────────────────────────────────────────────────────────
   if (!user) {
     return (
-      <main className="flex-1 flex flex-col items-center justify-center min-h-screen p-4 bg-zinc-950 text-zinc-100 relative overflow-hidden">
+      <main className="fixed inset-0 flex flex-col items-center justify-center p-4 bg-zinc-950 text-zinc-100 overflow-hidden">
         <div className="absolute top-1/4 left-1/4 w-[40rem] h-[40rem] bg-violet-600/10 rounded-full blur-[160px] -z-10 animate-pulse" />
         <div className="absolute bottom-1/4 right-1/4 w-[40rem] h-[40rem] bg-fuchsia-600/10 rounded-full blur-[160px] -z-10 animate-pulse" />
 
@@ -403,7 +403,7 @@ export default function Home() {
 
   // ─── Dashboard ────────────────────────────────────────────────────────────
   return (
-    <main className="flex-1 flex flex-col md:flex-row min-h-0 bg-zinc-950 text-zinc-100 overflow-hidden">
+    <main className="fixed inset-0 flex flex-col md:flex-row bg-zinc-950 text-zinc-100 overflow-hidden">
       <Sidebar
         user={user}
         activeRoomId={activeRoomId}

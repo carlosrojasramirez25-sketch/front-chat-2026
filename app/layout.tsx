@@ -25,9 +25,9 @@ export default function RootLayout({
   return (
     <html
       lang="en"
-      className={`${geistSans.variable} ${geistMono.variable} h-dvh antialiased`}
+      className={`${geistSans.variable} ${geistMono.variable} antialiased`}
     >
-      <body className="h-full flex flex-col bg-zinc-950 overflow-hidden">{children}</body>
+      <body className="bg-zinc-950">{children}</body>
     </html>
   );
 }
