@@ -1,15 +1,25 @@
 'use client';
 
 import { useState, useEffect, useRef } from 'react';
-import { Send, Hash, CornerDownLeft, MessageSquare, AlertCircle, Loader2, ChevronLeft, MoreHorizontal, Pencil, Trash2, Check, X, ImagePlus, Sticker } from 'lucide-react';
+import { Send, Hash, CornerDownLeft, MessageSquare, AlertCircle, Loader2, ChevronLeft, MoreHorizontal, Pencil, Trash2, Check, X, ImagePlus, Sticker, Reply } from 'lucide-react';
 import { Socket } from 'socket.io-client';
 import type { Conversation } from '@/app/page';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
+interface ReplyPreview {
+  id: number;
+  content: string | null;
+  sender_id: number;
+  type?: string;
+  users?: { name?: string | null };
+}
+
 interface Message {
   id: string | number;
   content: string | null;
   type?: 'text' | 'image' | 'file' | 'system';
+  reply_to_id?: number | null;
+  messages?: ReplyPreview | null; // Prisma self-relation: the replied-to message
   conversation_id: number;
   sender_id: number;
   users?: { id: number; name: string; email: string; avatar_url?: string | null };
@@ -92,12 +102,14 @@ export default function ChatWindow({
   const [isUploadingImage, setIsUploadingImage] = useState(false);
   const [showStickerPicker, setShowStickerPicker] = useState(false);
   const [activeStickerTab, setActiveStickerTab] = useState('Caras');
+  const [replyingTo, setReplyingTo] = useState<Message | null>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const typingTimeoutRef = useRef<{ [userId: number]: NodeJS.Timeout }>({});
   const lastTypingEmitRef = useRef<number>(0);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const stickerPickerRef = useRef<HTMLDivElement>(null);
+  const longPressTimerRef = useRef<NodeJS.Timeout | null>(null);
 
   // Header menu state
   const [showMenu, setShowMenu] = useState(false);
@@ -132,7 +144,25 @@ export default function ChatWindow({
     setShowMenu(false);
     setIsEditingName(false);
     setShowDeleteConfirm(false);
+    setReplyingTo(null);
+    setShowStickerPicker(false);
   }, [activeRoomId]);
+
+  // ── Long press (mobile reply) ─────────────────────────────────────────────
+  const startLongPress = (msg: Message) => {
+    longPressTimerRef.current = setTimeout(() => {
+      setReplyingTo(msg);
+      setShowStickerPicker(false);
+      if (navigator.vibrate) navigator.vibrate(50);
+    }, 500);
+  };
+
+  const cancelLongPress = () => {
+    if (longPressTimerRef.current) {
+      clearTimeout(longPressTimerRef.current);
+      longPressTimerRef.current = null;
+    }
+  };
 
   // Close dropdown on outside click
   useEffect(() => {
@@ -346,12 +376,14 @@ export default function ChatWindow({
         setMessages((prev) => [...prev, optimistic]);
         setImageFile(null);
         setImagePreview(null);
+        setReplyingTo(null);
 
         socket.emit('sendMessage', {
           conversation_id: activeRoomId,
           sender_id: currentUser.id,
           content: imageUrl,
           type: 'image',
+          ...(replyingTo ? { reply_to_id: Number(replyingTo.id) } : {}),
           ...(needsSendAvatar ? { sender_avatar: myAvatar } : {}),
         });
       } catch (err) {
@@ -373,12 +405,14 @@ export default function ChatWindow({
     };
     setMessages((prev) => [...prev, optimistic]);
     setInputValue('');
+    setReplyingTo(null);
     if (textareaRef.current) textareaRef.current.style.height = 'auto';
 
     socket.emit('sendMessage', {
       conversation_id: activeRoomId,
       sender_id: currentUser.id,
       content,
+      ...(replyingTo ? { reply_to_id: Number(replyingTo.id) } : {}),
       ...(needsSendAvatar ? { sender_avatar: myAvatar } : {}),
     });
   };
@@ -564,11 +598,16 @@ export default function ChatWindow({
 
         {messages.map((msg) => {
           const isMe = Number(msg.sender_id) === currentUser.id;
+          const isSticker = isStickerMsg(msg.content);
+          // Resolve replied-to message: from Prisma include or local state fallback
+          const quotedMsg = msg.reply_to_id
+            ? (msg.messages ?? messages.find((m) => Number(m.id) === msg.reply_to_id) ?? null)
+            : null;
 
           return (
             <div
               key={msg.id}
-              className={`flex flex-col max-w-[75%] ${isMe ? 'ml-auto items-end' : 'mr-auto items-start'}`}
+              className={`group flex flex-col max-w-[75%] ${isMe ? 'ml-auto items-end' : 'mr-auto items-start'}`}
             >
               {!isMe && (
                 <span className="text-[10px] font-bold text-zinc-500 mb-1.5 px-1">
@@ -576,33 +615,65 @@ export default function ChatWindow({
                 </span>
               )}
 
-              <div
-                className={`rounded-2xl text-sm shadow-md ${
-                  isStickerMsg(msg.content)
-                    ? 'bg-transparent shadow-none p-1'
-                    : msg.type === 'image'
-                    ? 'overflow-hidden p-0'
-                    : 'px-4 py-3 whitespace-pre-wrap'
-                } ${
-                  isStickerMsg(msg.content)
-                    ? ''
-                    : isMe
-                    ? 'bg-gradient-to-tr from-violet-600 to-fuchsia-600 text-white rounded-tr-none'
-                    : 'bg-zinc-900 text-zinc-100 rounded-tl-none border border-zinc-800'
-                }`}
-              >
-                {isStickerMsg(msg.content) ? (
-                  <span className="text-5xl leading-none block">{msg.content}</span>
-                ) : msg.type === 'image' && msg.content ? (
-                  <img
-                    src={msg.content}
-                    alt="imagen"
-                    className="max-w-[260px] max-h-[320px] object-cover block"
-                    onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }}
-                  />
-                ) : (
-                  msg.content ?? ''
+              {/* Bubble row: reply button + bubble */}
+              <div className={`flex items-end gap-1 ${isMe ? 'flex-row-reverse' : 'flex-row'}`}>
+                {/* Reply button — desktop hover only */}
+                {!isSticker && (
+                  <button
+                    type="button"
+                    onClick={() => { setReplyingTo(msg); setShowStickerPicker(false); textareaRef.current?.focus(); }}
+                    className="opacity-0 group-hover:opacity-100 p-1.5 text-zinc-500 hover:text-violet-400 hover:bg-zinc-800 rounded-full transition-all shrink-0 hidden md:flex"
+                    title="Responder"
+                  >
+                    <Reply className="w-3.5 h-3.5" />
+                  </button>
                 )}
+
+                <div
+                  className={`rounded-2xl text-sm shadow-md ${
+                    isSticker
+                      ? 'bg-transparent shadow-none p-1'
+                      : msg.type === 'image'
+                      ? 'overflow-hidden p-0'
+                      : 'px-4 py-3 whitespace-pre-wrap'
+                  } ${
+                    isSticker
+                      ? ''
+                      : isMe
+                      ? 'bg-gradient-to-tr from-violet-600 to-fuchsia-600 text-white rounded-tr-none'
+                      : 'bg-zinc-900 text-zinc-100 rounded-tl-none border border-zinc-800'
+                  }`}
+                  onTouchStart={() => !isSticker && startLongPress(msg)}
+                  onTouchEnd={cancelLongPress}
+                  onTouchMove={cancelLongPress}
+                >
+                  {/* Quoted message inside bubble */}
+                  {quotedMsg && !isSticker && (
+                    <div className={`mb-2 px-2.5 py-1.5 rounded-lg text-xs border-l-2 ${
+                      isMe ? 'bg-white/10 border-white/40' : 'bg-zinc-800 border-violet-500/70'
+                    }`}>
+                      <p className={`font-bold text-[10px] mb-0.5 truncate ${isMe ? 'text-white/70' : 'text-violet-400'}`}>
+                        {quotedMsg.sender_id === currentUser.id ? 'Tú' : (quotedMsg.users?.name ?? 'Usuario')}
+                      </p>
+                      <p className="opacity-70 truncate">
+                        {quotedMsg.type === 'image' ? '📷 Imagen' : (quotedMsg.content ?? '...')}
+                      </p>
+                    </div>
+                  )}
+
+                  {isSticker ? (
+                    <span className="text-5xl leading-none block">{msg.content}</span>
+                  ) : msg.type === 'image' && msg.content ? (
+                    <img
+                      src={msg.content}
+                      alt="imagen"
+                      className="max-w-[260px] max-h-[320px] object-cover block"
+                      onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }}
+                    />
+                  ) : (
+                    msg.content ?? ''
+                  )}
+                </div>
               </div>
 
               <span className="text-[9px] text-zinc-600 mt-1 px-1">
@@ -641,6 +712,28 @@ export default function ChatWindow({
           className="hidden"
           onChange={handleImageSelect}
         />
+
+        {/* Reply preview strip */}
+        {replyingTo && (
+          <div className="mb-2 flex items-center gap-2 px-3 py-2 bg-zinc-800/60 border border-zinc-700/50 rounded-xl">
+            <div className="w-0.5 h-8 bg-violet-500 rounded-full shrink-0" />
+            <div className="flex-1 min-w-0">
+              <p className="text-[10px] font-bold text-violet-400 mb-0.5">
+                {replyingTo.sender_id === currentUser.id ? 'Tú' : (replyingTo.users?.name ?? 'Usuario')}
+              </p>
+              <p className="text-xs text-zinc-400 truncate">
+                {replyingTo.type === 'image' ? '📷 Imagen' : (replyingTo.content ?? '')}
+              </p>
+            </div>
+            <button
+              type="button"
+              onClick={() => setReplyingTo(null)}
+              className="shrink-0 p-1 text-zinc-500 hover:text-zinc-200 transition-colors"
+            >
+              <X className="w-3.5 h-3.5" />
+            </button>
+          </div>
+        )}
 
         {/* Image preview strip */}
         {imagePreview && (
