@@ -45,7 +45,7 @@ export default function AuthForm({ onAuthSuccess }: AuthFormProps) {
       const data = await response.json();
 
       if (!response.ok) {
-        throw new Error(data.message || (isLogin ? 'Failed to log in' : 'Failed to register'));
+        throw new Error(data.message || (isLogin ? 'Error al iniciar sesión' : 'Error al registrarse'));
       }
 
       if (!data.payloadJWT) {
@@ -81,7 +81,7 @@ export default function AuthForm({ onAuthSuccess }: AuthFormProps) {
         id: Number(userId),
       });
     } catch (err: any) {
-      setError(err.message || 'An error occurred during authentication');
+      setError(err.message || 'Ocurrió un error durante la autenticación');
     } finally {
       setLoading(false);
     }
@@ -97,10 +97,10 @@ export default function AuthForm({ onAuthSuccess }: AuthFormProps) {
           {isLogin ? <LogIn className="w-6 h-6 animate-pulse" /> : <UserPlus className="w-6 h-6 animate-pulse" />}
         </div>
         <h2 className="text-2xl font-bold bg-gradient-to-r from-zinc-100 to-zinc-400 bg-clip-text text-transparent">
-          {isLogin ? 'Welcome Back' : 'Create Account'}
+          {isLogin ? 'Bienvenido de vuelta' : 'Crear cuenta'}
         </h2>
         <p className="text-sm text-zinc-400 mt-1">
-          {isLogin ? 'Enter your details to log into your account' : 'Register to start chatting in real time'}
+          {isLogin ? 'Ingresa tus datos para iniciar sesión' : 'Regístrate para comenzar a chatear'}
         </p>
       </div>
 
@@ -112,7 +112,7 @@ export default function AuthForm({ onAuthSuccess }: AuthFormProps) {
             isLogin ? 'bg-zinc-800 text-white shadow-md' : 'text-zinc-400 hover:text-zinc-200'
           }`}
         >
-          Login
+          Iniciar sesión
         </button>
         <button
           type="button"
@@ -121,7 +121,7 @@ export default function AuthForm({ onAuthSuccess }: AuthFormProps) {
             !isLogin ? 'bg-zinc-800 text-white shadow-md' : 'text-zinc-400 hover:text-zinc-200'
           }`}
         >
-          Register
+          Registrarse
         </button>
       </div>
 
@@ -136,7 +136,7 @@ export default function AuthForm({ onAuthSuccess }: AuthFormProps) {
         {!isLogin && (
           <div>
             <label className="block text-xs font-semibold text-zinc-400 uppercase tracking-wider mb-2">
-              Full Name
+              Nombre completo
             </label>
             <div className="relative">
               <User className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-zinc-500" />
@@ -154,7 +154,7 @@ export default function AuthForm({ onAuthSuccess }: AuthFormProps) {
 
         <div>
           <label className="block text-xs font-semibold text-zinc-400 uppercase tracking-wider mb-2">
-            Email Address
+            Correo electrónico
           </label>
           <div className="relative">
             <Mail className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-zinc-500" />
@@ -171,7 +171,7 @@ export default function AuthForm({ onAuthSuccess }: AuthFormProps) {
 
         <div>
           <label className="block text-xs font-semibold text-zinc-400 uppercase tracking-wider mb-2">
-            Password
+            Contraseña
           </label>
           <div className="relative">
             <Lock className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-zinc-500" />
@@ -194,9 +194,9 @@ export default function AuthForm({ onAuthSuccess }: AuthFormProps) {
           {loading ? (
             <RefreshCw className="w-5 h-5 animate-spin" />
           ) : isLogin ? (
-            <>Sign In <LogIn className="w-4 h-4" /></>
+            <>Iniciar sesión <LogIn className="w-4 h-4" /></>
           ) : (
-            <>Register Account <UserPlus className="w-4 h-4" /></>
+            <>Crear cuenta <UserPlus className="w-4 h-4" /></>
           )}
         </button>
       </form>
