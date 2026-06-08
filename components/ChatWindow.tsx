@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect, useRef } from 'react';
-import { Send, Hash, CornerDownLeft, MessageSquare, AlertCircle, Loader2, ChevronLeft, MoreHorizontal, Pencil, Trash2, Check, X, ImagePlus } from 'lucide-react';
+import { Send, Hash, CornerDownLeft, MessageSquare, AlertCircle, Loader2, ChevronLeft, MoreHorizontal, Pencil, Trash2, Check, X, ImagePlus, Sticker } from 'lucide-react';
 import { Socket } from 'socket.io-client';
 import type { Conversation } from '@/app/page';
 
@@ -32,6 +32,22 @@ interface ChatWindowProps {
   userStatuses?: Record<number, { status: string; lastSeenAt: string | null }>;
   contactAvatars?: Record<number, string>;
   onSaveContactAvatar?: (contactId: number, dataUrl: string) => void;
+}
+
+// ─── Stickers ────────────────────────────────────────────────────────────────
+const STICKERS: Record<string, string[]> = {
+  'Caras':       ['😀','😂','🥰','😍','😎','🤔','😢','😡','🥺','🤯','😳','🥳','🤩','😘','😊','🫶'],
+  'Gestos':      ['👍','👎','👋','🤝','🙏','👏','✌️','🤞','💪','🫂','🤙','👌','🫵','🤌'],
+  'Corazones':   ['❤️','🧡','💛','💚','💙','💜','🖤','🤍','💕','💞','💓','💗','💖','💝','💘'],
+  'Animales':    ['🐶','🐱','🐸','🐼','🦊','🐨','🦁','🐯','🐮','🐷','🐻','🦋','🐧','🦄','🐝'],
+  'Celebración': ['🎉','🎊','🎁','🔥','💯','✨','🌟','⭐','🏆','🎯','🚀','💥','🎶','🎸','🌈'],
+};
+
+function isStickerMsg(content: string | null): boolean {
+  if (!content) return false;
+  const t = content.trim();
+  if (t.length > 12 || t.length === 0) return false;
+  return !/[a-zA-Z0-9]/.test(t) && /\p{Emoji}/u.test(t);
 }
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
@@ -74,11 +90,14 @@ export default function ChatWindow({
   const [imageFile, setImageFile] = useState<File | null>(null);
   const [imagePreview, setImagePreview] = useState<string | null>(null);
   const [isUploadingImage, setIsUploadingImage] = useState(false);
+  const [showStickerPicker, setShowStickerPicker] = useState(false);
+  const [activeStickerTab, setActiveStickerTab] = useState('Caras');
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const typingTimeoutRef = useRef<{ [userId: number]: NodeJS.Timeout }>({});
   const lastTypingEmitRef = useRef<number>(0);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const stickerPickerRef = useRef<HTMLDivElement>(null);
 
   // Header menu state
   const [showMenu, setShowMenu] = useState(false);
@@ -241,6 +260,34 @@ export default function ChatWindow({
       lastTypingEmitRef.current = now;
       socket.emit('typing', { conversation_id: activeRoomId, user_id: currentUser.id });
     }
+  };
+
+  // ── Close sticker picker on outside click ────────────────────────────────
+  useEffect(() => {
+    if (!showStickerPicker) return;
+    const handler = (e: MouseEvent) => {
+      if (stickerPickerRef.current && !stickerPickerRef.current.contains(e.target as Node)) {
+        setShowStickerPicker(false);
+      }
+    };
+    document.addEventListener('mousedown', handler);
+    return () => document.removeEventListener('mousedown', handler);
+  }, [showStickerPicker]);
+
+  // ── Send sticker ──────────────────────────────────────────────────────────
+  const handleSendSticker = (emoji: string) => {
+    if (!activeRoomId || !socket) return;
+    setShowStickerPicker(false);
+    const optimistic: Message = {
+      id: `opt-${Date.now()}`,
+      content: emoji,
+      conversation_id: activeRoomId,
+      sender_id: currentUser.id,
+      users: { id: currentUser.id, name: currentUser.name, email: currentUser.email },
+      created_at: new Date().toISOString(),
+    };
+    setMessages((prev) => [...prev, optimistic]);
+    socket.emit('sendMessage', { conversation_id: activeRoomId, sender_id: currentUser.id, content: emoji });
   };
 
   // ── Image select ──────────────────────────────────────────────────────────
@@ -531,14 +578,22 @@ export default function ChatWindow({
 
               <div
                 className={`rounded-2xl text-sm shadow-md ${
-                  msg.type === 'image' ? 'overflow-hidden p-0' : 'px-4 py-3 whitespace-pre-wrap'
+                  isStickerMsg(msg.content)
+                    ? 'bg-transparent shadow-none p-1'
+                    : msg.type === 'image'
+                    ? 'overflow-hidden p-0'
+                    : 'px-4 py-3 whitespace-pre-wrap'
                 } ${
-                  isMe
+                  isStickerMsg(msg.content)
+                    ? ''
+                    : isMe
                     ? 'bg-gradient-to-tr from-violet-600 to-fuchsia-600 text-white rounded-tr-none'
                     : 'bg-zinc-900 text-zinc-100 rounded-tl-none border border-zinc-800'
                 }`}
               >
-                {msg.type === 'image' && msg.content ? (
+                {isStickerMsg(msg.content) ? (
+                  <span className="text-5xl leading-none block">{msg.content}</span>
+                ) : msg.type === 'image' && msg.content ? (
                   <img
                     src={msg.content}
                     alt="imagen"
@@ -608,6 +663,36 @@ export default function ChatWindow({
           </div>
         )}
 
+        {/* Sticker picker */}
+        {showStickerPicker && (
+          <div ref={stickerPickerRef} className="absolute bottom-full left-0 mb-2 w-72 bg-zinc-900 border border-zinc-800 rounded-2xl shadow-2xl overflow-hidden z-50">
+            <div className="flex border-b border-zinc-800 px-2 pt-2 gap-1 overflow-x-auto">
+              {Object.keys(STICKERS).map((cat) => (
+                <button
+                  key={cat}
+                  type="button"
+                  onClick={() => setActiveStickerTab(cat)}
+                  className={`px-2.5 py-1.5 text-[10px] font-bold rounded-t-lg whitespace-nowrap transition-colors shrink-0 ${activeStickerTab === cat ? 'bg-zinc-800 text-violet-400' : 'text-zinc-500 hover:text-zinc-300'}`}
+                >
+                  {cat}
+                </button>
+              ))}
+            </div>
+            <div className="grid grid-cols-8 gap-0.5 p-2 max-h-44 overflow-y-auto">
+              {STICKERS[activeStickerTab].map((emoji) => (
+                <button
+                  key={emoji}
+                  type="button"
+                  onClick={() => handleSendSticker(emoji)}
+                  className="text-2xl hover:bg-zinc-800 rounded-lg p-1 transition-colors leading-none"
+                >
+                  {emoji}
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
+
         <form onSubmit={handleSendMessage} className="relative flex items-end gap-2 bg-zinc-900/50 border border-zinc-800 rounded-2xl p-2 focus-within:border-violet-500/80 focus-within:ring-2 focus-within:ring-violet-500/10 transition-all">
           {/* Image button */}
           <button
@@ -618,6 +703,17 @@ export default function ChatWindow({
             title="Adjuntar imagen"
           >
             <ImagePlus className="w-5 h-5" />
+          </button>
+
+          {/* Sticker button */}
+          <button
+            type="button"
+            onClick={() => setShowStickerPicker((v) => !v)}
+            disabled={isUploadingImage}
+            className={`p-2 rounded-xl transition-all shrink-0 self-end mb-0.5 disabled:opacity-40 disabled:cursor-not-allowed ${showStickerPicker ? 'bg-violet-600 text-white' : 'bg-zinc-800 text-violet-400 hover:bg-violet-600 hover:text-white'}`}
+            title="Stickers"
+          >
+            <Sticker className="w-5 h-5" />
           </button>
 
           <textarea
