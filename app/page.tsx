@@ -89,8 +89,9 @@ export default function Home() {
   const [user, setUser] = useState<User | null>(null);
   const [token, setToken] = useState<string | null>(null);
 
-  const [apiUrl, setApiUrl] = useState('http://localhost:3000');
-  const [socketUrl, setSocketUrl] = useState('http://localhost:3000');
+  const BACKEND_URL = process.env.NEXT_PUBLIC_BACKEND_URL!;
+  const [apiUrl] = useState(BACKEND_URL);
+  const [socketUrl] = useState(BACKEND_URL);
 
   const [activeRoomId, setActiveRoomId] = useState<number | null>(null);
   const activeRoomIdRef = useRef<number | null>(null);
@@ -158,13 +159,6 @@ export default function Home() {
     setMounted(true);
 
     const storedToken = localStorage.getItem('chat_token');
-    const storedApiUrl = localStorage.getItem('chat_api_url');
-    const storedSocketUrl = localStorage.getItem('chat_socket_url');
-
-    const resolvedApiUrl = storedApiUrl ?? 'http://localhost:3000';
-
-    if (storedApiUrl) setApiUrl(storedApiUrl);
-    if (storedSocketUrl) setSocketUrl(storedSocketUrl);
 
     if (storedToken) {
       const decoded = decodeToken(storedToken);
@@ -179,7 +173,7 @@ export default function Home() {
         setUser(userData);
         setAliases(loadAliasesFromStorage(uid));
         setContactAvatars(loadContactAvatarsFromStorage(uid));
-        loadConversations(uid, storedToken, resolvedApiUrl);
+        loadConversations(uid, storedToken, apiUrl);
 
         const storedActiveRoom = localStorage.getItem('chat_active_room_id');
         if (storedActiveRoom) {
@@ -368,13 +362,6 @@ export default function Home() {
     disconnectSocket();
   };
 
-  const handleSettingsChange = (settings: { apiUrl: string; socketUrl: string }) => {
-    localStorage.setItem('chat_api_url', settings.apiUrl);
-    localStorage.setItem('chat_socket_url', settings.socketUrl);
-    setApiUrl(settings.apiUrl);
-    setSocketUrl(settings.socketUrl);
-  };
-
   // ── Derived state ─────────────────────────────────────────────────────────
   const activeConversation = conversations.find((c) => c.id === activeRoomId) ?? null;
 
@@ -408,9 +395,6 @@ export default function Home() {
         </div>
 
         <AuthForm
-          apiUrl={apiUrl}
-          socketUrl={socketUrl}
-          onSettingsChange={handleSettingsChange}
           onAuthSuccess={handleAuthSuccess}
         />
       </main>
@@ -426,8 +410,6 @@ export default function Home() {
         onRoomSelect={handleRoomSelect}
         onLogout={handleLogout}
         apiUrl={apiUrl}
-        socketUrl={socketUrl}
-        onSettingsChange={handleSettingsChange}
         socketConnected={socketConnected}
         token={token}
         conversations={conversations}

@@ -3,7 +3,6 @@
 import { useState, useEffect, useRef } from 'react';
 import {
   LogOut,
-  Settings,
   MessageSquare,
   Search,
   UserCheck,
@@ -37,8 +36,6 @@ interface SidebarProps {
   onRoomSelect: (roomId: number) => void;
   onLogout: () => void;
   apiUrl: string;
-  socketUrl: string;
-  onSettingsChange: (settings: { apiUrl: string; socketUrl: string }) => void;
   socketConnected: boolean;
   token: string | null;
   conversations: Conversation[];
