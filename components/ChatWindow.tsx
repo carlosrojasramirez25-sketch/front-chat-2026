@@ -619,7 +619,7 @@ export default function ChatWindow({
               )}
 
               {/* Bubble row: reply button + bubble */}
-              <div className={`flex items-end gap-1 ${isMe ? 'flex-row-reverse' : 'flex-row'}`}>
+              <div className={`flex items-end gap-1 min-w-0 ${isMe ? 'flex-row-reverse' : 'flex-row'}`}>
                 {/* Reply button — desktop hover only */}
                 {!isSticker && (
                   <button
@@ -633,7 +633,7 @@ export default function ChatWindow({
                 )}
 
                 <div
-                  className={`rounded-2xl text-sm shadow-md transition-colors duration-200 ${
+                  className={`rounded-2xl text-sm shadow-md min-w-0 transition-colors duration-200 ${
                     isSticker
                       ? 'bg-transparent shadow-none p-1'
                       : msg.type === 'image'
