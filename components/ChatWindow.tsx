@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect, useRef } from 'react';
-import { Send, Hash, CornerDownLeft, MessageSquare, AlertCircle, Loader2, ChevronLeft, MoreHorizontal, Pencil, Trash2, Check, X, ImagePlus, Sticker, Reply, Phone } from 'lucide-react';
+import { Send, Hash, CornerDownLeft, MessageSquare, AlertCircle, Loader2, ChevronLeft, MoreHorizontal, Pencil, Trash2, Check, X, ImagePlus, Sticker, Reply, Phone, Mic } from 'lucide-react';
 import { Socket } from 'socket.io-client';
 import type { Conversation } from '@/app/page';
 
@@ -17,7 +17,7 @@ interface ReplyPreview {
 interface Message {
   id: string | number;
   content: string | null;
-  type?: 'text' | 'image' | 'file' | 'system';
+  type?: 'text' | 'image' | 'file' | 'system' | 'audio';
   reply_to_id?: number | null;
   messages?: ReplyPreview | null; // Prisma self-relation: the replied-to message
   conversation_id: number;
@@ -102,6 +102,9 @@ export default function ChatWindow({
   const [imageFile, setImageFile] = useState<File | null>(null);
   const [imagePreview, setImagePreview] = useState<string | null>(null);
   const [isUploadingImage, setIsUploadingImage] = useState(false);
+  const [isRecording, setIsRecording] = useState(false);
+  const [recordingTime, setRecordingTime] = useState(0);
+  const [isUploadingAudio, setIsUploadingAudio] = useState(false);
   const [showStickerPicker, setShowStickerPicker] = useState(false);
   const [activeStickerTab, setActiveStickerTab] = useState('Caras');
   const [replyingTo, setReplyingTo] = useState<Message | null>(null);
@@ -112,6 +115,9 @@ export default function ChatWindow({
   const fileInputRef = useRef<HTMLInputElement>(null);
   const stickerPickerRef = useRef<HTMLDivElement>(null);
   const longPressTimerRef = useRef<NodeJS.Timeout | null>(null);
+  const mediaRecorderRef = useRef<MediaRecorder | null>(null);
+  const audioChunksRef = useRef<Blob[]>([]);
+  const recordingIntervalRef = useRef<NodeJS.Timeout | null>(null);
 
   // Header menu state
   const [showMenu, setShowMenu] = useState(false);
@@ -148,6 +154,18 @@ export default function ChatWindow({
     setShowDeleteConfirm(false);
     setReplyingTo(null);
     setShowStickerPicker(false);
+    if (mediaRecorderRef.current) {
+      mediaRecorderRef.current.onstop = null;
+      if (mediaRecorderRef.current.state !== 'inactive') mediaRecorderRef.current.stop();
+      mediaRecorderRef.current = null;
+    }
+    audioChunksRef.current = [];
+    setIsRecording(false);
+    setRecordingTime(0);
+    if (recordingIntervalRef.current) {
+      clearInterval(recordingIntervalRef.current);
+      recordingIntervalRef.current = null;
+    }
   }, [activeRoomId]);
 
   // ── Long press (mobile reply) ─────────────────────────────────────────────
@@ -423,6 +441,83 @@ export default function ChatWindow({
     if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleSendMessage(e); }
   };
 
+  // ── Audio recording ───────────────────────────────────────────────────────
+  const handleStartRecording = async () => {
+    if (!activeRoomId || !socket) return;
+    const capturedRoomId = activeRoomId;
+    const capturedSocket = socket;
+    setShowStickerPicker(false);
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      const mimeType = MediaRecorder.isTypeSupported('audio/webm') ? 'audio/webm' : 'audio/mp4';
+      const recorder = new MediaRecorder(stream, { mimeType });
+      mediaRecorderRef.current = recorder;
+      audioChunksRef.current = [];
+
+      recorder.ondataavailable = (e) => { if (e.data.size > 0) audioChunksRef.current.push(e.data); };
+
+      recorder.onstop = async () => {
+        stream.getTracks().forEach((t) => t.stop());
+        if (audioChunksRef.current.length === 0) return;
+        const blob = new Blob(audioChunksRef.current, { type: mimeType });
+        audioChunksRef.current = [];
+        setIsUploadingAudio(true);
+        try {
+          const base = normalizeUrl(apiUrl);
+          const ext = mimeType === 'audio/mp4' ? 'mp4' : 'webm';
+          const formData = new FormData();
+          formData.append('file', blob, `audio-${Date.now()}.${ext}`);
+          formData.append('uploadedBy', String(currentUser.id));
+          const headers: HeadersInit = {};
+          if (token) headers['Authorization'] = `Bearer ${token}`;
+          const res = await fetch(`${base}/api/attachments/upload`, { method: 'POST', headers, body: formData });
+          if (!res.ok) throw new Error('Upload failed');
+          const data = await res.json();
+          const audioUrl = `${base}${data.url}`;
+          const optimistic: Message = {
+            id: `opt-${Date.now()}`,
+            content: audioUrl,
+            type: 'audio',
+            conversation_id: capturedRoomId,
+            sender_id: currentUser.id,
+            users: { id: currentUser.id, name: currentUser.name, email: currentUser.email },
+            created_at: new Date().toISOString(),
+          };
+          setMessages((prev) => [...prev, optimistic]);
+          capturedSocket.emit('sendMessage', { conversation_id: capturedRoomId, sender_id: currentUser.id, content: audioUrl, type: 'audio' });
+        } catch { /* upload failed */ } finally {
+          setIsUploadingAudio(false);
+        }
+      };
+
+      recorder.start();
+      setIsRecording(true);
+      setRecordingTime(0);
+      recordingIntervalRef.current = setInterval(() => setRecordingTime((t) => t + 1), 1000);
+    } catch { /* mic permission denied */ }
+  };
+
+  const handleStopRecording = () => {
+    if (!mediaRecorderRef.current || !isRecording) return;
+    mediaRecorderRef.current.stop();
+    mediaRecorderRef.current = null;
+    setIsRecording(false);
+    setRecordingTime(0);
+    if (recordingIntervalRef.current) { clearInterval(recordingIntervalRef.current); recordingIntervalRef.current = null; }
+  };
+
+  const handleCancelRecording = () => {
+    if (mediaRecorderRef.current) {
+      mediaRecorderRef.current.onstop = null;
+      if (mediaRecorderRef.current.state !== 'inactive') mediaRecorderRef.current.stop();
+      mediaRecorderRef.current = null;
+    }
+    audioChunksRef.current = [];
+    setIsRecording(false);
+    setRecordingTime(0);
+    if (recordingIntervalRef.current) { clearInterval(recordingIntervalRef.current); recordingIntervalRef.current = null; }
+  };
+
   // ── Header name edit ──────────────────────────────────────────────────────
   const handleSaveNameEdit = () => {
     if (activeRoomId && onSaveAlias) {
@@ -651,6 +746,8 @@ export default function ChatWindow({
                       ? 'bg-transparent shadow-none p-1'
                       : msg.type === 'image'
                       ? 'overflow-hidden p-0'
+                      : msg.type === 'audio'
+                      ? 'px-3 py-2'
                       : 'px-4 py-3 whitespace-pre-wrap break-words overflow-hidden'
                   } ${
                     isSticker
@@ -672,7 +769,7 @@ export default function ChatWindow({
                         {quotedMsg.sender_id === currentUser.id ? 'Tú' : (quotedMsg.users?.name ?? 'Usuario')}
                       </p>
                       <p className="opacity-70 truncate">
-                        {quotedMsg.type === 'image' ? '📷 Imagen' : (quotedMsg.content ?? '...')}
+                        {quotedMsg.type === 'image' ? '📷 Imagen' : quotedMsg.type === 'audio' ? '🎵 Audio' : (quotedMsg.content ?? '...')}
                       </p>
                     </div>
                   )}
@@ -686,6 +783,8 @@ export default function ChatWindow({
                       className="max-w-[260px] max-h-[320px] object-cover block"
                       onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }}
                     />
+                  ) : msg.type === 'audio' && msg.content ? (
+                    <audio controls src={msg.content} className="max-w-[240px] h-10" preload="none" />
                   ) : (
                     <span>{msg.content ?? ''}</span>
                   )}
@@ -737,7 +836,7 @@ export default function ChatWindow({
                 {replyingTo.sender_id === currentUser.id ? 'Tú' : (replyingTo.users?.name ?? 'Usuario')}
               </p>
         <p className="text-xs text-zinc-400 truncate max-w-full overflow-hidden">
-  {replyingTo.type === 'image' ? '📷 Imagen' : (replyingTo.content ?? '')}
+  {replyingTo.type === 'image' ? '📷 Imagen' : replyingTo.type === 'audio' ? '🎵 Audio' : (replyingTo.content ?? '')}
 </p>
             </div>
             <button
@@ -801,55 +900,94 @@ export default function ChatWindow({
           </div>
         )}
 
-        <form onSubmit={handleSendMessage} className="relative flex items-end gap-2 bg-zinc-900/50 border border-zinc-800 rounded-2xl p-2 focus-within:border-violet-500/80 focus-within:ring-2 focus-within:ring-violet-500/10 transition-all">
-          {/* Image button */}
-          <button
-            type="button"
-            onClick={() => fileInputRef.current?.click()}
-            disabled={isUploadingImage}
-            className="p-2 bg-zinc-800 text-violet-400 hover:bg-violet-600 hover:text-white rounded-xl transition-all shrink-0 self-end mb-0.5 disabled:opacity-40 disabled:cursor-not-allowed"
-            title="Adjuntar imagen"
-          >
-            <ImagePlus className="w-5 h-5" />
-          </button>
-
-          {/* Sticker button */}
-          <button
-            type="button"
-            onClick={() => setShowStickerPicker((v) => !v)}
-            disabled={isUploadingImage}
-            className={`p-2 rounded-xl transition-all shrink-0 self-end mb-0.5 disabled:opacity-40 disabled:cursor-not-allowed ${showStickerPicker ? 'bg-violet-600 text-white' : 'bg-zinc-800 text-violet-400 hover:bg-violet-600 hover:text-white'}`}
-            title="Stickers"
-          >
-            <Sticker className="w-5 h-5" />
-          </button>
-
-          <textarea
-            ref={textareaRef}
-            value={inputValue}
-            onChange={handleInputChange}
-            onKeyDown={handleKeyDown}
-            placeholder={imageFile ? 'Agregar caption (opcional)...' : `Message #conversation_${activeRoomId}...`}
-            rows={1}
-            disabled={isUploadingImage}
-            className="flex-1 max-h-32 bg-transparent border-0 focus:ring-0 focus:outline-none py-2 px-3 text-sm text-zinc-100 placeholder-zinc-550 resize-none overflow-y-auto disabled:opacity-50"
-          />
-
-          <div className="flex items-center gap-2 pr-1.5 pb-1">
-            <span className="text-[10px] text-zinc-600 hidden md:flex items-center gap-1 bg-zinc-950/80 border border-zinc-800 py-1 px-2 rounded-lg">
-              <span>Enter to send</span>
-              <CornerDownLeft className="w-2.5 h-2.5" />
-            </span>
-
+        {isRecording ? (
+          <div className="flex items-center gap-2 bg-zinc-900/50 border border-red-500/40 rounded-2xl p-2">
             <button
-              type="submit"
-              disabled={(!inputValue.trim() && !imageFile) || isUploadingImage}
-              className="p-2.5 bg-gradient-to-tr from-violet-600 to-fuchsia-600 hover:from-violet-500 hover:to-fuchsia-500 disabled:from-zinc-900 disabled:to-zinc-900 text-white disabled:text-zinc-600 rounded-xl transition-all shadow-md shadow-violet-600/10 active:scale-[0.96] disabled:cursor-not-allowed"
+              type="button"
+              onClick={handleCancelRecording}
+              className="p-2 text-zinc-500 hover:text-red-400 rounded-xl transition-colors shrink-0"
+              title="Cancelar"
             >
-              {isUploadingImage ? <Loader2 className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4" />}
+              <X className="w-5 h-5" />
+            </button>
+            <div className="flex-1 flex items-center gap-2 px-2 min-w-0">
+              <span className="w-2 h-2 rounded-full bg-red-500 animate-pulse shrink-0" />
+              <span className="text-sm text-red-400 font-mono tabular-nums">
+                {String(Math.floor(recordingTime / 60)).padStart(2, '0')}:{String(recordingTime % 60).padStart(2, '0')}
+              </span>
+              <span className="text-xs text-zinc-500 truncate">Grabando audio...</span>
+            </div>
+            <button
+              type="button"
+              onClick={handleStopRecording}
+              className="p-2.5 bg-red-600 hover:bg-red-500 text-white rounded-xl transition-all active:scale-[0.96] shrink-0"
+              title="Enviar audio"
+            >
+              <Send className="w-4 h-4" />
             </button>
           </div>
-        </form>
+        ) : (
+          <form onSubmit={handleSendMessage} className="relative flex items-end gap-2 bg-zinc-900/50 border border-zinc-800 rounded-2xl p-2 focus-within:border-violet-500/80 focus-within:ring-2 focus-within:ring-violet-500/10 transition-all">
+            {/* Image button */}
+            <button
+              type="button"
+              onClick={() => fileInputRef.current?.click()}
+              disabled={isUploadingImage || isUploadingAudio}
+              className="p-2 bg-zinc-800 text-violet-400 hover:bg-violet-600 hover:text-white rounded-xl transition-all shrink-0 self-end mb-0.5 disabled:opacity-40 disabled:cursor-not-allowed"
+              title="Adjuntar imagen"
+            >
+              <ImagePlus className="w-5 h-5" />
+            </button>
+
+            {/* Sticker button */}
+            <button
+              type="button"
+              onClick={() => setShowStickerPicker((v) => !v)}
+              disabled={isUploadingImage || isUploadingAudio}
+              className={`p-2 rounded-xl transition-all shrink-0 self-end mb-0.5 disabled:opacity-40 disabled:cursor-not-allowed ${showStickerPicker ? 'bg-violet-600 text-white' : 'bg-zinc-800 text-violet-400 hover:bg-violet-600 hover:text-white'}`}
+              title="Stickers"
+            >
+              <Sticker className="w-5 h-5" />
+            </button>
+
+            {/* Mic button */}
+            <button
+              type="button"
+              onClick={handleStartRecording}
+              disabled={isUploadingImage || isUploadingAudio}
+              className="p-2 bg-zinc-800 text-violet-400 hover:bg-red-600 hover:text-white rounded-xl transition-all shrink-0 self-end mb-0.5 disabled:opacity-40 disabled:cursor-not-allowed"
+              title="Grabar audio"
+            >
+              <Mic className="w-5 h-5" />
+            </button>
+
+            <textarea
+              ref={textareaRef}
+              value={inputValue}
+              onChange={handleInputChange}
+              onKeyDown={handleKeyDown}
+              placeholder={imageFile ? 'Agregar caption (opcional)...' : `Message #conversation_${activeRoomId}...`}
+              rows={1}
+              disabled={isUploadingImage || isUploadingAudio}
+              className="flex-1 max-h-32 bg-transparent border-0 focus:ring-0 focus:outline-none py-2 px-3 text-sm text-zinc-100 placeholder-zinc-550 resize-none overflow-y-auto disabled:opacity-50"
+            />
+
+            <div className="flex items-center gap-2 pr-1.5 pb-1">
+              <span className="text-[10px] text-zinc-600 hidden md:flex items-center gap-1 bg-zinc-950/80 border border-zinc-800 py-1 px-2 rounded-lg">
+                <span>Enter to send</span>
+                <CornerDownLeft className="w-2.5 h-2.5" />
+              </span>
+
+              <button
+                type="submit"
+                disabled={(!inputValue.trim() && !imageFile) || isUploadingImage || isUploadingAudio}
+                className="p-2.5 bg-gradient-to-tr from-violet-600 to-fuchsia-600 hover:from-violet-500 hover:to-fuchsia-500 disabled:from-zinc-900 disabled:to-zinc-900 text-white disabled:text-zinc-600 rounded-xl transition-all shadow-md shadow-violet-600/10 active:scale-[0.96] disabled:cursor-not-allowed"
+              >
+                {isUploadingImage || isUploadingAudio ? <Loader2 className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4" />}
+              </button>
+            </div>
+          </form>
+        )}
       </div>
     </div>
   );
