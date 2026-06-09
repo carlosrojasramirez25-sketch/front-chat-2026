@@ -662,9 +662,9 @@ export default function ChatWindow({
                       <p className={`font-bold text-[10px] mb-0.5 truncate ${isMe ? 'text-white/70' : 'text-violet-400'}`}>
                         {quotedMsg.sender_id === currentUser.id ? 'Tú' : (quotedMsg.users?.name ?? 'Usuario')}
                       </p>
-                      <p className="opacity-70 truncate">
-                        {quotedMsg.type === 'image' ? '📷 Imagen' : (quotedMsg.content ?? '...')}
-                      </p>
+           <p className="opacity-70 truncate max-w-full overflow-hidden">
+  {quotedMsg.type === 'image' ? '📷 Imagen' : (quotedMsg.content ?? '...')}
+</p>
                     </div>
                   )}
 
@@ -722,15 +722,14 @@ export default function ChatWindow({
 
         {/* Reply preview strip */}
         {replyingTo && (
-          <div className="mb-2 flex items-center gap-2 px-3 py-2 bg-zinc-800/60 border border-zinc-700/50 rounded-xl">
-            <div className="w-0.5 h-8 bg-violet-500 rounded-full shrink-0" />
+       <div className="mb-2 flex items-center gap-2 px-3 py-2 bg-zinc-800/60 border border-zinc-700/50 rounded-xl overflow-hidden"> <div className="w-0.5 h-8 bg-violet-500 rounded-full shrink-0" />
             <div className="flex-1 min-w-0">
               <p className="text-[10px] font-bold text-violet-400 mb-0.5">
                 {replyingTo.sender_id === currentUser.id ? 'Tú' : (replyingTo.users?.name ?? 'Usuario')}
               </p>
-              <p className="text-xs text-zinc-400 truncate">
-                {replyingTo.type === 'image' ? '📷 Imagen' : (replyingTo.content ?? '')}
-              </p>
+        <p className="text-xs text-zinc-400 truncate max-w-full overflow-hidden">
+  {replyingTo.type === 'image' ? '📷 Imagen' : (replyingTo.content ?? '')}
+</p>
             </div>
             <button
               type="button"
