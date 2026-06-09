@@ -579,7 +579,7 @@ export default function ChatWindow({
       </div>
 
       {/* Messages */}
-      <div className="flex-1 min-h-0 overflow-y-auto p-6 space-y-6 scrollbar-thin">
+      <div className="flex-1 min-h-0 overflow-y-auto px-4 py-6 space-y-6 scrollbar-thin overflow-x-hidden">
 
         {loadingHistory && (
           <div className="flex justify-center py-8">
@@ -608,7 +608,7 @@ export default function ChatWindow({
           return (
             <div
               key={msg.id}
-              className={`group flex flex-col max-w-[75%] min-w-0 w-fit ${
+              className={`group flex flex-col max-w-[75%] min-w-0 ${
                 isMe ? 'ml-auto items-end' : 'mr-auto items-start'
               }`}
             >
