@@ -114,8 +114,8 @@ function AudioPlayer({ src, isMe }: { src: string; isMe: boolean }) {
         ref={audioRef}
         src={src}
         preload="metadata"
-        onTimeUpdate={() => audioRef.current && setCurrentTime(audioRef.current.currentTime)}
-        onLoadedMetadata={() => audioRef.current && setDuration(audioRef.current.duration)}
+        onTimeUpdate={(e) => setCurrentTime((e.target as HTMLAudioElement).currentTime)}
+        onLoadedMetadata={(e) => setDuration((e.target as HTMLAudioElement).duration)}
         onEnded={() => { setIsPlaying(false); setCurrentTime(0); }}
       />
       <button
@@ -139,8 +139,8 @@ function AudioPlayer({ src, isMe }: { src: string; isMe: boolean }) {
                 style={{ height: `${h}px` }}
                 className={`flex-1 rounded-full transition-colors ${
                   active
-                    ? (isMe ? 'bg-white' : 'bg-violet-400')
-                    : (isMe ? 'bg-white/30' : 'bg-zinc-600')
+                    ? (isMe ? 'bg-fuchsia-200' : 'bg-violet-400')
+                    : (isMe ? 'bg-white/25' : 'bg-zinc-600')
                 }`}
               />
             );
