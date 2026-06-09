@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect, useRef } from 'react';
-import { Send, Hash, CornerDownLeft, MessageSquare, AlertCircle, Loader2, ChevronLeft, MoreHorizontal, Pencil, Trash2, Check, X, ImagePlus, Sticker, Reply, Phone, Mic } from 'lucide-react';
+import { Send, Hash, CornerDownLeft, MessageSquare, AlertCircle, Loader2, ChevronLeft, MoreHorizontal, Pencil, Trash2, Check, X, ImagePlus, Sticker, Reply, Phone, Mic, Play, Pause } from 'lucide-react';
 import { Socket } from 'socket.io-client';
 import type { Conversation } from '@/app/page';
 
@@ -76,6 +76,83 @@ function normalizeUrl(url: string) {
   if (!u.startsWith('http://') && !u.startsWith('https://')) u = `http://${u}`;
   if (u.endsWith('/')) u = u.slice(0, -1);
   return u;
+}
+
+// ─── Audio Player ─────────────────────────────────────────────────────────────
+const WAVEFORM = [3, 6, 10, 7, 13, 8, 5, 9, 14, 7, 11, 5, 8, 12, 6, 9, 4, 7, 11, 6];
+
+function AudioPlayer({ src, isMe }: { src: string; isMe: boolean }) {
+  const audioRef = useRef<HTMLAudioElement>(null);
+  const [isPlaying, setIsPlaying] = useState(false);
+  const [currentTime, setCurrentTime] = useState(0);
+  const [duration, setDuration] = useState(0);
+
+  const toggle = () => {
+    const audio = audioRef.current;
+    if (!audio) return;
+    if (isPlaying) { audio.pause(); setIsPlaying(false); }
+    else { audio.play(); setIsPlaying(true); }
+  };
+
+  const handleSeek = (e: React.MouseEvent<HTMLDivElement>) => {
+    const audio = audioRef.current;
+    if (!audio || !duration) return;
+    const rect = e.currentTarget.getBoundingClientRect();
+    audio.currentTime = ((e.clientX - rect.left) / rect.width) * duration;
+  };
+
+  const fmt = (s: number) => {
+    if (!isFinite(s) || isNaN(s)) return '0:00';
+    return `${Math.floor(s / 60)}:${String(Math.floor(s % 60)).padStart(2, '0')}`;
+  };
+
+  const progress = duration ? (currentTime / duration) * 100 : 0;
+
+  return (
+    <div className="flex items-center gap-2.5 w-52">
+      <audio
+        ref={audioRef}
+        src={src}
+        preload="metadata"
+        onTimeUpdate={() => audioRef.current && setCurrentTime(audioRef.current.currentTime)}
+        onLoadedMetadata={() => audioRef.current && setDuration(audioRef.current.duration)}
+        onEnded={() => { setIsPlaying(false); setCurrentTime(0); }}
+      />
+      <button
+        type="button"
+        onClick={toggle}
+        className={`w-8 h-8 rounded-full flex items-center justify-center shrink-0 transition-all active:scale-95 ${
+          isMe ? 'bg-white/20 hover:bg-white/30 text-white' : 'bg-violet-500/20 hover:bg-violet-500/40 text-violet-300'
+        }`}
+      >
+        {isPlaying
+          ? <Pause className="w-3.5 h-3.5" />
+          : <Play className="w-3.5 h-3.5 ml-0.5" />}
+      </button>
+      <div className="flex-1 flex flex-col gap-1 min-w-0">
+        <div className="flex items-end gap-[2px] h-4 cursor-pointer" onClick={handleSeek}>
+          {WAVEFORM.map((h, i) => {
+            const active = (i / WAVEFORM.length) * 100 <= progress;
+            return (
+              <div
+                key={i}
+                style={{ height: `${h}px` }}
+                className={`flex-1 rounded-full transition-colors ${
+                  active
+                    ? (isMe ? 'bg-white' : 'bg-violet-400')
+                    : (isMe ? 'bg-white/30' : 'bg-zinc-600')
+                }`}
+              />
+            );
+          })}
+        </div>
+        <div className={`flex justify-between text-[9px] font-mono tabular-nums ${isMe ? 'text-white/50' : 'text-zinc-500'}`}>
+          <span>{fmt(currentTime)}</span>
+          <span>{fmt(duration)}</span>
+        </div>
+      </div>
+    </div>
+  );
 }
 
 // ─── Component ───────────────────────────────────────────────────────────────
@@ -784,7 +861,7 @@ export default function ChatWindow({
                       onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }}
                     />
                   ) : msg.type === 'audio' && msg.content ? (
-                    <audio controls src={msg.content} className="max-w-[240px] h-10" preload="none" />
+                    <AudioPlayer src={msg.content} isMe={isMe} />
                   ) : (
                     <span>{msg.content ?? ''}</span>
                   )}
