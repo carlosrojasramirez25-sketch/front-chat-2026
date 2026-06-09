@@ -674,7 +674,7 @@ export default function ChatWindow({
                       onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }}
                     />
                   ) : (
-                   <span className="break-all">{msg.content ?? ''}</span>
+                   {msg.content ?? ''}
                   )}
                 </div>
               </div>
