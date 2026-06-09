@@ -608,7 +608,7 @@ export default function ChatWindow({
           return (
             <div
               key={msg.id}
-              className={`group flex flex-col max-w-[75%] ${
+              className={`group flex flex-col max-w-[75%] min-w-0 w-fit ${
                 isMe ? 'ml-auto items-end' : 'mr-auto items-start'
               }`}
             >
@@ -638,7 +638,7 @@ export default function ChatWindow({
                       ? 'bg-transparent shadow-none p-1'
                       : msg.type === 'image'
                       ? 'overflow-hidden p-0'
-                      : 'px-4 py-3 whitespace-pre-wrap'
+                      : 'px-4 py-3 whitespace-pre-wrap break-words overflow-hidden'
                   } ${
                     isSticker
                       ? ''
@@ -678,7 +678,7 @@ export default function ChatWindow({
                       onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }}
                     />
                   ) : (
-                    msg.content ?? ''
+                   <span className="break-all">{msg.content ?? ''}</span>
                   )}
                 </div>
               </div>
