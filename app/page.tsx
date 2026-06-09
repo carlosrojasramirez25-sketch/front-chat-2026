@@ -39,6 +39,13 @@ export interface Conversation {
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
+function sanitizeAvatarUrl(url: string | null | undefined): string | null {
+  if (!url) return null;
+  if (url.startsWith('https://') || url.startsWith('http://')) return url;
+  if (/^data:image\/(jpeg|png|webp|gif);base64,[A-Za-z0-9+/=]+$/.test(url)) return url;
+  return null;
+}
+
 function getNumericId(emailStr: string): number {
   let hash = 0;
   for (let i = 0; i < emailStr.length; i++) {
@@ -157,7 +164,7 @@ export default function Home() {
         return {
           id: convo.id,
           participant: other?.users
-            ? { id: other.users.id, name: other.users.name || other.users.email.split('@')[0], email: other.users.email, avatar: other.users.avatar_url ?? undefined }
+            ? { id: other.users.id, name: other.users.name || other.users.email.split('@')[0], email: other.users.email, avatar: sanitizeAvatarUrl(other.users.avatar_url) ?? undefined }
             : { id: 0, name: `Chat #${convo.id}`, email: '' },
           lastMessage: convo.messages?.[0]?.content ?? 'No messages yet',
           updatedAt: convo.updated_at ?? new Date().toISOString(),
@@ -269,8 +276,10 @@ export default function Home() {
     };
 
     const onProfilePhotoUpdate = (data: { userId: number; avatar_url: string }) => {
+      const safeAvatar = sanitizeAvatarUrl(data.avatar_url);
+      if (!safeAvatar) return;
       setContactAvatars((prev) => {
-        const updated = { ...prev, [data.userId]: data.avatar_url };
+        const updated = { ...prev, [data.userId]: safeAvatar };
         try {
           localStorage.setItem(`chat_contact_avatars_${user.id}`, JSON.stringify(updated));
         } catch {}
@@ -279,7 +288,7 @@ export default function Home() {
       setConversations((prev) =>
         prev.map((c) =>
           c.participant.id === data.userId
-            ? { ...c, participant: { ...c.participant, avatar: data.avatar_url } }
+            ? { ...c, participant: { ...c.participant, avatar: safeAvatar } }
             : c,
         ),
       );
