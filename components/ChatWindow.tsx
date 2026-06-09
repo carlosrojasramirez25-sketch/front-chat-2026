@@ -1043,7 +1043,7 @@ export default function ChatWindow({
               value={inputValue}
               onChange={handleInputChange}
               onKeyDown={handleKeyDown}
-              placeholder={imageFile ? 'Agregar caption (opcional)...' : `Message #conversation_${activeRoomId}...`}
+              placeholder={imageFile ? 'Agregar caption (opcional)...' : 'Mensaje...'}
               rows={1}
               disabled={isUploadingImage || isUploadingAudio}
               className="flex-1 max-h-32 bg-transparent border-0 focus:ring-0 focus:outline-none py-2 px-3 text-sm text-zinc-100 placeholder-zinc-550 resize-none overflow-y-auto disabled:opacity-50"
