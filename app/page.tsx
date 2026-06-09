@@ -6,8 +6,16 @@ import { registerPush } from '@/lib/push';
 import AuthForm from '@/components/AuthForm';
 import Sidebar from '@/components/Sidebar';
 import ChatWindow from '@/components/ChatWindow';
+import CallUI from '@/components/CallUI';
 import { Socket } from 'socket.io-client';
 import { RefreshCw, MessageSquare } from 'lucide-react';
+
+const ICE_SERVERS = [
+  { urls: 'stun:stun.l.google.com:19302' },
+  { urls: 'stun:stun1.l.google.com:19302' },
+];
+
+type CallStatus = 'idle' | 'calling' | 'incoming' | 'active';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -113,6 +121,15 @@ export default function Home() {
   // ── Contact avatars (local photo overrides per contact) ──────────────────
   const [contactAvatars, setContactAvatars] = useState<Record<number, string>>({});
 
+  // ── Call state ────────────────────────────────────────────────────────────
+  const [callStatus, setCallStatus] = useState<CallStatus>('idle');
+  const [callPeer, setCallPeer] = useState<{ userId: number; name: string; avatar?: string } | null>(null);
+  const [isMuted, setIsMuted] = useState(false);
+  const [pendingOffer, setPendingOffer] = useState<RTCSessionDescriptionInit | null>(null);
+  const peerRef = useRef<RTCPeerConnection | null>(null);
+  const localStreamRef = useRef<MediaStream | null>(null);
+  const remoteAudioRef = useRef<HTMLAudioElement | null>(null);
+
   // ── User presence ─────────────────────────────────────────────────────────
   const [userStatuses, setUserStatuses] = useState<Record<number, { status: string; lastSeenAt: string | null }>>({});
 
@@ -188,6 +205,19 @@ export default function Home() {
     }
   }, [loadConversations]);
 
+  // ── WebRTC cleanup (defined before socket useEffect so handlers can reference it) ──
+  const cleanupCall = useCallback(() => {
+    peerRef.current?.close();
+    peerRef.current = null;
+    localStreamRef.current?.getTracks().forEach((t) => t.stop());
+    localStreamRef.current = null;
+    if (remoteAudioRef.current) remoteAudioRef.current.srcObject = null;
+    setCallStatus('idle');
+    setCallPeer(null);
+    setPendingOffer(null);
+    setIsMuted(false);
+  }, []);
+
   // ── Socket connection ────────────────────────────────────────────────────
   useEffect(() => {
     if (!mounted || !user) {
@@ -255,6 +285,33 @@ export default function Home() {
       );
     };
 
+    const onIncomingCall = (data: { callerId: number; callerName: string; offer: RTCSessionDescriptionInit }) => {
+      setPendingOffer(data.offer);
+      setCallPeer({ userId: data.callerId, name: data.callerName });
+      setCallStatus('incoming');
+    };
+
+    const onCallAnswered = async (data: { answer: RTCSessionDescriptionInit }) => {
+      if (peerRef.current) {
+        await peerRef.current.setRemoteDescription(new RTCSessionDescription(data.answer));
+        setCallStatus('active');
+      }
+    };
+
+    const onCallRejected = () => {
+      cleanupCall();
+    };
+
+    const onCallEnded = () => {
+      cleanupCall();
+    };
+
+    const onIceCandidate = async (data: { candidate: RTCIceCandidateInit }) => {
+      if (peerRef.current && data.candidate) {
+        await peerRef.current.addIceCandidate(new RTCIceCandidate(data.candidate)).catch(() => {});
+      }
+    };
+
     socketInstance.on('connect', onConnect);
     socketInstance.on('disconnect', onDisconnect);
     socketInstance.on('connect_error', onConnectError);
@@ -262,6 +319,11 @@ export default function Home() {
     socketInstance.on('newMessage', onNewMessage);
     socketInstance.on('userStatusChanged', onUserStatusChanged);
     socketInstance.on('profilePhotoUpdate', onProfilePhotoUpdate);
+    socketInstance.on('incomingCall', onIncomingCall);
+    socketInstance.on('callAnswered', onCallAnswered);
+    socketInstance.on('callRejected', onCallRejected);
+    socketInstance.on('callEnded', onCallEnded);
+    socketInstance.on('iceCandidate', onIceCandidate);
 
     if (socketInstance.connected) {
       setSocketConnected(true);
@@ -276,12 +338,86 @@ export default function Home() {
       socketInstance.off('newMessage', onNewMessage);
       socketInstance.off('userStatusChanged', onUserStatusChanged);
       socketInstance.off('profilePhotoUpdate', onProfilePhotoUpdate);
+      socketInstance.off('incomingCall', onIncomingCall);
+      socketInstance.off('callAnswered', onCallAnswered);
+      socketInstance.off('callRejected', onCallRejected);
+      socketInstance.off('callEnded', onCallEnded);
+      socketInstance.off('iceCandidate', onIceCandidate);
       socketInstance.disconnect();
       socketRef.current = null;
       setSocketConnected(false);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [mounted, user, socketUrl]);
+
+  // ── WebRTC helpers ────────────────────────────────────────────────────────
+  const createPeer = (targetUserId: number) => {
+    const peer = new RTCPeerConnection({ iceServers: ICE_SERVERS });
+    peer.onicecandidate = (e) => {
+      if (e.candidate && socketRef.current) {
+        socketRef.current.emit('iceCandidate', { targetUserId, candidate: e.candidate.toJSON() });
+      }
+    };
+    peer.ontrack = (e) => {
+      if (remoteAudioRef.current) remoteAudioRef.current.srcObject = e.streams[0];
+    };
+    return peer;
+  };
+
+  const startCall = async (targetUserId: number, targetName: string, targetAvatar?: string) => {
+    if (!socketRef.current || !user) return;
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      localStreamRef.current = stream;
+      const peer = createPeer(targetUserId);
+      stream.getTracks().forEach((t) => peer.addTrack(t, stream));
+      const offer = await peer.createOffer();
+      await peer.setLocalDescription(offer);
+      peerRef.current = peer;
+      setCallPeer({ userId: targetUserId, name: targetName, avatar: targetAvatar });
+      setCallStatus('calling');
+      socketRef.current.emit('callOffer', { targetUserId, callerId: user.id, callerName: user.name, offer, conversationId: activeRoomId });
+    } catch {
+      cleanupCall();
+    }
+  };
+
+  const acceptCall = async () => {
+    if (!socketRef.current || !user || !pendingOffer || !callPeer) return;
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      localStreamRef.current = stream;
+      const peer = createPeer(callPeer.userId);
+      stream.getTracks().forEach((t) => peer.addTrack(t, stream));
+      await peer.setRemoteDescription(new RTCSessionDescription(pendingOffer));
+      const answer = await peer.createAnswer();
+      await peer.setLocalDescription(answer);
+      peerRef.current = peer;
+      setCallStatus('active');
+      socketRef.current.emit('callAnswer', { callerId: callPeer.userId, answer });
+    } catch {
+      cleanupCall();
+    }
+  };
+
+  const rejectCall = () => {
+    if (socketRef.current && callPeer) {
+      socketRef.current.emit('callReject', { callerId: callPeer.userId });
+    }
+    cleanupCall();
+  };
+
+  const hangUp = () => {
+    if (socketRef.current && callPeer) {
+      socketRef.current.emit('callEnd', { targetUserId: callPeer.userId });
+    }
+    cleanupCall();
+  };
+
+  const toggleMute = () => {
+    localStreamRef.current?.getAudioTracks().forEach((t) => { t.enabled = !t.enabled; });
+    setIsMuted((m) => !m);
+  };
 
   // ── Contact avatar management ─────────────────────────────────────────────
   const handleSaveContactAvatar = (contactId: number, dataUrl: string) => {
@@ -407,6 +543,23 @@ export default function Home() {
   // ─── Dashboard ────────────────────────────────────────────────────────────
   return (
     <main className="fixed inset-0 flex flex-col md:flex-row bg-zinc-950 text-zinc-100 overflow-hidden">
+      {/* Hidden audio element for remote call audio */}
+      <audio ref={remoteAudioRef} autoPlay playsInline style={{ display: 'none' }} />
+
+      {/* Call overlay */}
+      {callStatus !== 'idle' && callPeer && (
+        <CallUI
+          status={callStatus}
+          remoteName={callPeer.name}
+          remoteAvatar={callPeer.avatar}
+          isMuted={isMuted}
+          onAccept={acceptCall}
+          onReject={rejectCall}
+          onHangUp={hangUp}
+          onToggleMute={toggleMute}
+        />
+      )}
+
       <Sidebar
         user={user}
         activeRoomId={activeRoomId}
@@ -444,6 +597,7 @@ export default function Home() {
         userStatuses={userStatuses}
         contactAvatars={contactAvatars}
         onSaveContactAvatar={handleSaveContactAvatar}
+        onCall={(userId, name, avatar) => startCall(userId, name, avatar)}
       />
     </main>
   );

@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect, useRef } from 'react';
-import { Send, Hash, CornerDownLeft, MessageSquare, AlertCircle, Loader2, ChevronLeft, MoreHorizontal, Pencil, Trash2, Check, X, ImagePlus, Sticker, Reply } from 'lucide-react';
+import { Send, Hash, CornerDownLeft, MessageSquare, AlertCircle, Loader2, ChevronLeft, MoreHorizontal, Pencil, Trash2, Check, X, ImagePlus, Sticker, Reply, Phone } from 'lucide-react';
 import { Socket } from 'socket.io-client';
 import type { Conversation } from '@/app/page';
 
@@ -42,6 +42,7 @@ interface ChatWindowProps {
   userStatuses?: Record<number, { status: string; lastSeenAt: string | null }>;
   contactAvatars?: Record<number, string>;
   onSaveContactAvatar?: (contactId: number, dataUrl: string) => void;
+  onCall?: (userId: number, name: string, avatar?: string) => void;
 }
 
 // ─── Stickers ────────────────────────────────────────────────────────────────
@@ -92,6 +93,7 @@ export default function ChatWindow({
   userStatuses,
   contactAvatars,
   onSaveContactAvatar,
+  onCall,
 }: ChatWindowProps) {
   const [messages, setMessages] = useState<Message[]>([]);
   const [loadingHistory, setLoadingHistory] = useState(false);
@@ -537,6 +539,17 @@ export default function ChatWindow({
             </div>
           )}
         </div>
+
+        {/* Call button */}
+        {!isEditingName && !showDeleteConfirm && onCall && activeConversation?.participant?.id && (
+          <button
+            onClick={() => onCall(activeConversation.participant.id, activeConversation.participant.name, activeConversation.participant.avatar)}
+            className="p-2 hover:bg-zinc-900/60 text-zinc-400 hover:text-emerald-400 rounded-xl transition-all border border-transparent hover:border-zinc-800 shrink-0"
+            title="Llamada de voz"
+          >
+            <Phone className="w-4 h-4" />
+          </button>
+        )}
 
         {/* Three-dot menu — hidden while editing/confirming */}
         {!isEditingName && !showDeleteConfirm && (
