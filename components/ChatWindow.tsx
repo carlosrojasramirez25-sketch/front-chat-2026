@@ -711,7 +711,7 @@ export default function ChatWindow({
       </div>
 
       {/* Input panel */}
-      <div className="p-4 border-t border-zinc-900 bg-zinc-950/80 shrink-0">
+      <div className="p-4 border-t border-zinc-900 bg-zinc-950/80 shrink-0 overflow-hidden">
         <input
           ref={fileInputRef}
           type="file"
