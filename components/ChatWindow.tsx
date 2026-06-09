@@ -652,15 +652,15 @@ export default function ChatWindow({
                 >
                   {/* Quoted message inside bubble */}
                   {quotedMsg && !isSticker && (
-                    <div className={`mb-2 px-2.5 py-1.5 rounded-lg text-xs border-l-2 ${
+                    <div className={`mb-2 px-2.5 py-1.5 rounded-lg text-xs border-l-2 min-w-0 overflow-hidden ${
                       isMe ? 'bg-white/10 border-white/40' : 'bg-zinc-800 border-violet-500/70'
                     }`}>
                       <p className={`font-bold text-[10px] mb-0.5 truncate ${isMe ? 'text-white/70' : 'text-violet-400'}`}>
                         {quotedMsg.sender_id === currentUser.id ? 'Tú' : (quotedMsg.users?.name ?? 'Usuario')}
                       </p>
-           <p className="opacity-70 truncate max-w-full overflow-hidden">
-  {quotedMsg.type === 'image' ? '📷 Imagen' : (quotedMsg.content ?? '...')}
-</p>
+                      <p className="opacity-70 truncate">
+                        {quotedMsg.type === 'image' ? '📷 Imagen' : (quotedMsg.content ?? '...')}
+                      </p>
                     </div>
                   )}
 
