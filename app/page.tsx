@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { getSocket, disconnectSocket } from '@/lib/socket';
+import { registerPush } from '@/lib/push';
 import AuthForm from '@/components/AuthForm';
 import Sidebar from '@/components/Sidebar';
 import ChatWindow from '@/components/ChatWindow';
@@ -174,6 +175,7 @@ export default function Home() {
         setAliases(loadAliasesFromStorage(uid));
         setContactAvatars(loadContactAvatarsFromStorage(uid));
         loadConversations(uid, storedToken, apiUrl);
+        registerPush(uid, apiUrl, storedToken);
 
         const storedActiveRoom = localStorage.getItem('chat_active_room_id');
         if (storedActiveRoom) {
@@ -343,6 +345,7 @@ export default function Home() {
     setAliases(loadAliasesFromStorage(userData.id));
     setContactAvatars(loadContactAvatarsFromStorage(userData.id));
     loadConversations(userData.id, newToken, apiUrl);
+    registerPush(userData.id, apiUrl, newToken);
   };
 
   const handleLogout = () => {
