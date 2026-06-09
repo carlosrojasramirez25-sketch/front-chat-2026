@@ -619,7 +619,7 @@ export default function ChatWindow({
               )}
 
               {/* Bubble row: reply button + bubble */}
-              <div className={`flex items-end gap-1 min-w-0 ${isMe ? 'flex-row-reverse' : 'flex-row'}`}>
+              <div className={`flex items-end gap-1 min-w-0 max-w-full ${isMe ? 'flex-row-reverse' : 'flex-row'}`}>
                 {/* Reply button — desktop hover only */}
                 {!isSticker && (
                   <button
@@ -633,7 +633,7 @@ export default function ChatWindow({
                 )}
 
                 <div
-                  className={`rounded-2xl text-sm shadow-md min-w-0 transition-colors duration-200 ${
+                  className={`rounded-2xl text-sm shadow-md min-w-0 max-w-full transition-colors duration-200 ${
                     isSticker
                       ? 'bg-transparent shadow-none p-1'
                       : msg.type === 'image'
@@ -652,7 +652,7 @@ export default function ChatWindow({
                 >
                   {/* Quoted message inside bubble */}
                   {quotedMsg && !isSticker && (
-                    <div className={`mb-2 px-2.5 py-1.5 rounded-lg text-xs border-l-2 min-w-0 overflow-hidden ${
+                    <div className={`mb-2 px-2.5 py-1.5 rounded-lg text-xs border-l-2 min-w-0 w-full overflow-hidden ${
                       isMe ? 'bg-white/10 border-white/40' : 'bg-zinc-800 border-violet-500/70'
                     }`}>
                       <p className={`font-bold text-[10px] mb-0.5 truncate ${isMe ? 'text-white/70' : 'text-violet-400'}`}>
