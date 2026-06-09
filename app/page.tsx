@@ -145,7 +145,7 @@ export default function Home() {
     setLoadingConvos(true);
     try {
       const base = normalizeUrl(currentApiUrl);
-      const res = await fetch(`${base}/api/conversations?userId=${userId}`, {
+      const res = await fetch(`${base}/api/conversations`, {
         headers: { Authorization: `Bearer ${currentToken}` },
       });
       if (!res.ok) return;
