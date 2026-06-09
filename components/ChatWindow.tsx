@@ -608,9 +608,9 @@ export default function ChatWindow({
           return (
             <div
               key={msg.id}
-              className={`group flex flex-col max-w-[75%] min-w-0 ${
+              className={`group flex flex-col max-w-[75%] min-w-0 rounded-2xl transition-colors duration-200 ${
                 isMe ? 'ml-auto items-end' : 'mr-auto items-start'
-              }`}
+              } ${isSelected ? 'bg-violet-500/10' : ''}`}
             >
               {!isMe && (
                 <span className="text-[10px] font-bold text-zinc-500 mb-1.5 px-1">
@@ -643,11 +643,7 @@ export default function ChatWindow({
                     isSticker
                       ? ''
                       : isMe
-                      ? isSelected
-                        ? 'bg-gradient-to-tr from-violet-400 to-fuchsia-400 text-white rounded-tr-none'
-                        : 'bg-gradient-to-tr from-violet-600 to-fuchsia-600 text-white rounded-tr-none'
-                      : isSelected
-                      ? 'bg-violet-950 text-zinc-100 rounded-tl-none border border-violet-500'
+                      ? 'bg-gradient-to-tr from-violet-600 to-fuchsia-600 text-white rounded-tr-none'
                       : 'bg-zinc-900 text-zinc-100 rounded-tl-none border border-zinc-800'
                   }`}
                   onTouchStart={() => !isSticker && startLongPress(msg)}
