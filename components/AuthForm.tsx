@@ -109,7 +109,7 @@ export default function AuthForm({ onAuthSuccess }: AuthFormProps) {
           type="button"
           onClick={() => { setIsLogin(true); setError(null); }}
           className={`flex-1 py-2 text-sm font-medium rounded-lg transition-all duration-300 ${
-            isLogin ? 'bg-zinc-800 text-white shadow-md' : 'text-zinc-400 hover:text-zinc-200'
+            isLogin ? 'bg-zinc-800 text-zinc-100 shadow-md' : 'text-zinc-400 hover:text-zinc-200'
           }`}
         >
           Iniciar sesión
@@ -118,7 +118,7 @@ export default function AuthForm({ onAuthSuccess }: AuthFormProps) {
           type="button"
           onClick={() => { setIsLogin(false); setError(null); }}
           className={`flex-1 py-2 text-sm font-medium rounded-lg transition-all duration-300 ${
-            !isLogin ? 'bg-zinc-800 text-white shadow-md' : 'text-zinc-400 hover:text-zinc-200'
+            !isLogin ? 'bg-zinc-800 text-zinc-100 shadow-md' : 'text-zinc-400 hover:text-zinc-200'
           }`}
         >
           Registrarse
@@ -146,7 +146,7 @@ export default function AuthForm({ onAuthSuccess }: AuthFormProps) {
                 value={name}
                 onChange={(e) => setName(e.target.value)}
                 placeholder="Carlos Santana"
-                className="w-full bg-zinc-950/40 border border-zinc-800 focus:border-violet-500/80 focus:ring-2 focus:ring-violet-500/10 focus:outline-none rounded-xl py-3 pl-10 pr-4 text-white placeholder-zinc-550 transition-all text-sm"
+                className="w-full bg-zinc-950/40 border border-zinc-800 focus:border-violet-500/80 focus:ring-2 focus:ring-violet-500/10 focus:outline-none rounded-xl py-3 pl-10 pr-4 text-zinc-100 placeholder-zinc-500 transition-all text-sm"
               />
             </div>
           </div>
@@ -164,7 +164,7 @@ export default function AuthForm({ onAuthSuccess }: AuthFormProps) {
               value={email}
               onChange={(e) => setEmail(e.target.value)}
               placeholder="carlos@gmail.com"
-              className="w-full bg-zinc-950/40 border border-zinc-800 focus:border-violet-500/80 focus:ring-2 focus:ring-violet-500/10 focus:outline-none rounded-xl py-3 pl-10 pr-4 text-white placeholder-zinc-550 transition-all text-sm"
+              className="w-full bg-zinc-950/40 border border-zinc-800 focus:border-violet-500/80 focus:ring-2 focus:ring-violet-500/10 focus:outline-none rounded-xl py-3 pl-10 pr-4 text-zinc-100 placeholder-zinc-500 transition-all text-sm"
             />
           </div>
         </div>
@@ -181,7 +181,7 @@ export default function AuthForm({ onAuthSuccess }: AuthFormProps) {
               value={password}
               onChange={(e) => setPassword(e.target.value)}
               placeholder="••••••••"
-              className="w-full bg-zinc-950/40 border border-zinc-800 focus:border-violet-500/80 focus:ring-2 focus:ring-violet-500/10 focus:outline-none rounded-xl py-3 pl-10 pr-4 text-white placeholder-zinc-550 transition-all text-sm"
+              className="w-full bg-zinc-950/40 border border-zinc-800 focus:border-violet-500/80 focus:ring-2 focus:ring-violet-500/10 focus:outline-none rounded-xl py-3 pl-10 pr-4 text-zinc-100 placeholder-zinc-500 transition-all text-sm"
             />
           </div>
         </div>
