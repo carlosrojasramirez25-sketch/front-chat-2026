@@ -9,8 +9,7 @@ self.addEventListener('push', (event) => {
       icon: data.icon || '/icon-192.png',
       badge: '/icon-192.png',
       vibrate: [200, 100, 200],
-      tag: 'chat-message',
-      renotify: true,
+      tag: 'msg-' + Date.now(),
       data: { url: '/' },
     })
   );
