@@ -740,9 +740,22 @@ export default function Sidebar({
 
       {/* ── Footer ── */}
       <div className="border-t border-zinc-900 bg-zinc-950/40 shrink-0">
-        {pushDeniedMsg && (
-          <div className="mx-3 mt-3 px-3 py-2 bg-red-950/60 border border-red-800/50 rounded-xl text-xs text-red-300 leading-snug">
-            Notificaciones bloqueadas. En Chrome: toca el ícono 🔒 en la barra de dirección → Configuración del sitio → Notificaciones → Permitir.
+        {pushStatus === 'denied' && pushDeniedMsg && (
+          <div className="mx-3 mt-3 p-3 bg-zinc-900 border border-red-800/40 rounded-xl text-xs text-zinc-300 leading-relaxed">
+            <p className="font-semibold text-red-400 mb-1.5">Notificaciones bloqueadas</p>
+            <p className="text-zinc-400 mb-2">El navegador bloqueó el permiso. Para activarlo:</p>
+            <ol className="space-y-1 text-zinc-400 list-decimal list-inside">
+              <li>Toca el ícono <span className="text-zinc-200">🔒</span> en la barra de URL</li>
+              <li>Toca <span className="text-zinc-200">Configuración del sitio</span></li>
+              <li>Toca <span className="text-zinc-200">Notificaciones</span> → <span className="text-zinc-200">Permitir</span></li>
+              <li>Recarga la página y toca la campana</li>
+            </ol>
+            <button
+              onClick={() => setPushDeniedMsg(false)}
+              className="mt-2 text-[10px] text-zinc-600 hover:text-zinc-400 transition-colors"
+            >
+              Cerrar
+            </button>
           </div>
         )}
         <div className="flex items-center gap-3 p-4">
