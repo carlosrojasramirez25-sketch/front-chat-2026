@@ -78,6 +78,11 @@ function getChatBgStyle(bg: string | null): React.CSSProperties {
   return { background: bg };
 }
 
+function isSafeMediaUrl(url: string | null | undefined): boolean {
+  if (!url) return false;
+  return url.startsWith('https://') || url.startsWith('http://');
+}
+
 function isStickerMsg(content: string | null): boolean {
   if (!content) return false;
   const t = content.trim();
@@ -1016,15 +1021,16 @@ export default function ChatWindow({
 
                   {isSticker ? (
                     <span className="text-5xl leading-none block">{msg.content}</span>
-                  ) : msg.type === 'image' && msg.content ? (
+                  ) : msg.type === 'image' && isSafeMediaUrl(msg.content) ? (
                     <img
-                      src={msg.content}
+                      src={msg.content!}
                       alt="imagen"
+                      referrerPolicy="no-referrer"
                       className="max-w-[260px] max-h-[320px] object-cover block"
                       onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }}
                     />
-                  ) : msg.type === 'audio' && msg.content ? (
-                    <AudioPlayer src={msg.content} isMe={isMe} />
+                  ) : msg.type === 'audio' && isSafeMediaUrl(msg.content) ? (
+                    <AudioPlayer src={msg.content!} isMe={isMe} />
                   ) : (
                     <span>{msg.content ?? ''}</span>
                   )}
