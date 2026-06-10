@@ -378,7 +378,7 @@ export default function Sidebar({
               <div className="flex items-center justify-between mb-6">
                 <div className="flex items-center gap-2">
                   <User className="w-4 h-4 text-violet-400" />
-                  <h2 className="text-sm font-bold text-white">Editar perfil</h2>
+                  <h2 className="text-sm font-bold text-zinc-100">Editar perfil</h2>
                 </div>
                 <button
                   onClick={() => setShowEditProfile(false)}
@@ -433,7 +433,7 @@ export default function Sidebar({
                     onChange={(e) => setEditProfileName(e.target.value)}
                     onKeyDown={(e) => { if (e.key === 'Escape') setShowEditProfile(false); }}
                     placeholder={user.name}
-                    className="w-full bg-zinc-800/60 border border-zinc-700 rounded-xl py-2.5 px-3.5 text-sm text-white placeholder-zinc-500 focus:outline-none focus:border-violet-500 focus:ring-1 focus:ring-violet-500/30 transition-all"
+                    className="w-full bg-zinc-800/60 border border-zinc-700 rounded-xl py-2.5 px-3.5 text-sm text-zinc-100 placeholder-zinc-500 focus:outline-none focus:border-violet-500 focus:ring-1 focus:ring-violet-500/30 transition-all"
                   />
                 </div>
                 <div>
