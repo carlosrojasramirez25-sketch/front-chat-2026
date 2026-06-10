@@ -174,7 +174,14 @@ export default function Sidebar({
   const [pushStatus, setPushStatus] = useState<PushStatus>('default');
   useEffect(() => { setPushStatus(getPushPermission()); }, []);
 
+  const [pushDeniedMsg, setPushDeniedMsg] = useState(false);
+
   const handleEnablePush = async () => {
+    if (pushStatus === 'denied') {
+      setPushDeniedMsg(true);
+      setTimeout(() => setPushDeniedMsg(false), 4000);
+      return;
+    }
     const status = await enablePush(user.id, apiUrl, token ?? '');
     setPushStatus(status);
   };
@@ -732,8 +739,13 @@ export default function Sidebar({
       </div>
 
       {/* ── Footer ── */}
-      <div className="p-4 border-t border-zinc-900 bg-zinc-950/40 shrink-0">
-        <div className="flex items-center gap-3">
+      <div className="border-t border-zinc-900 bg-zinc-950/40 shrink-0">
+        {pushDeniedMsg && (
+          <div className="mx-3 mt-3 px-3 py-2 bg-red-950/60 border border-red-800/50 rounded-xl text-xs text-red-300 leading-snug">
+            Notificaciones bloqueadas. En Chrome: toca el ícono 🔒 en la barra de dirección → Configuración del sitio → Notificaciones → Permitir.
+          </div>
+        )}
+        <div className="flex items-center gap-3 p-4">
           {/* Avatar — click to open profile edit */}
           <button
             onClick={() => { setEditProfileName(savedDisplayName); setShowEditProfile(true); }}

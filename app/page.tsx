@@ -145,13 +145,7 @@ export default function Home() {
   const conversationsRef = useRef<Conversation[]>([]);
   useEffect(() => { conversationsRef.current = conversations; }, [conversations]);
 
-  // ── Browser notifications ─────────────────────────────────────────────────
-  useEffect(() => {
-    if (!user) return;
-    if ('Notification' in window && Notification.permission === 'default') {
-      Notification.requestPermission();
-    }
-  }, [user]);
+  // Notification permission is requested only via the bell button (user gesture)
 
   useEffect(() => {
     const onVisibilityChange = () => {
