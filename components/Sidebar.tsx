@@ -18,10 +18,13 @@ import {
   Camera,
   Sun,
   Moon,
+  Bell,
+  BellOff,
 } from 'lucide-react';
 import type { Socket } from 'socket.io-client';
 import type { Conversation } from '@/app/page';
 import { useTheme } from '@/app/providers';
+import { enablePush, getPushPermission, type PushStatus } from '@/lib/push';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -166,6 +169,15 @@ export default function Sidebar({
   const [editingAliasId, setEditingAliasId] = useState<number | null>(null);
   const [editingAliasValue, setEditingAliasValue] = useState('');
   const aliasInputRef = useRef<HTMLInputElement>(null);
+
+  // ── Push notification status ──────────────────────────────────────────────
+  const [pushStatus, setPushStatus] = useState<PushStatus>('default');
+  useEffect(() => { setPushStatus(getPushPermission()); }, []);
+
+  const handleEnablePush = async () => {
+    const status = await enablePush(user.id, apiUrl, token ?? '');
+    setPushStatus(status);
+  };
 
   // Close header menu on outside click
   useEffect(() => {
@@ -747,6 +759,25 @@ export default function Sidebar({
             <p className="text-sm font-semibold text-zinc-200 truncate leading-none">{savedDisplayName}</p>
             <p className="text-[10px] text-zinc-500 truncate mt-0.5">{user.email}</p>
           </div>
+
+          {/* Notifications toggle */}
+          <button
+            onClick={handleEnablePush}
+            className={`shrink-0 p-2 rounded-xl transition-all ${
+              pushStatus === 'granted'
+                ? 'text-violet-400 hover:bg-zinc-800'
+                : pushStatus === 'denied'
+                ? 'text-red-500 hover:bg-zinc-800'
+                : 'text-zinc-500 hover:text-violet-400 hover:bg-zinc-800'
+            }`}
+            title={
+              pushStatus === 'granted' ? 'Notificaciones activas' :
+              pushStatus === 'denied' ? 'Notificaciones bloqueadas (activa en config del navegador)' :
+              'Activar notificaciones'
+            }
+          >
+            {pushStatus === 'denied' ? <BellOff className="w-4 h-4" /> : <Bell className="w-4 h-4" />}
+          </button>
 
           {/* Theme toggle */}
           <button

@@ -8,33 +8,89 @@ function urlBase64ToUint8Array(base64String: string): Uint8Array<ArrayBuffer> {
   return view;
 }
 
+async function fetchVapidKey(base: string, token: string): Promise<string> {
+  const res = await fetch(`${base}/api/push/vapid-public-key`, {
+    headers: { Authorization: `Bearer ${token}` },
+  });
+  const data = await res.json();
+  console.log('[Push] VAPID key from backend:', data.publicKey?.slice(0, 20) + '...');
+  return data.publicKey;
+}
+
+export type PushStatus = 'unsupported' | 'denied' | 'granted' | 'default';
+
+export function getPushPermission(): PushStatus {
+  if (typeof window === 'undefined') return 'unsupported';
+  if (!('Notification' in window) || !('serviceWorker' in navigator) || !('PushManager' in window)) return 'unsupported';
+  return Notification.permission as PushStatus;
+}
+
 export async function registerPush(userId: number, apiUrl: string, token: string): Promise<void> {
   if (typeof window === 'undefined') return;
-  if (!('serviceWorker' in navigator) || !('PushManager' in window)) return;
-
-  const vapidKey = process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY
-    || 'BDSI1grnH1pm_I7J-lGfcaPvo6JdjOwVKTLBOky6zkFYHkZEEvrOGuqBt90k1r3K4GvKfb9NHT6U3rJigfJiIzg';
-  if (!vapidKey) return;
+  if (!('serviceWorker' in navigator) || !('PushManager' in window)) {
+    console.warn('[Push] Not supported in this browser');
+    return;
+  }
+  if (Notification.permission !== 'granted') return;
 
   try {
+    const base = apiUrl.trim().replace(/\/$/, '');
+    const vapidKey = await fetchVapidKey(base, token);
+
+    console.log('[Push] Registering SW...');
     const registration = await navigator.serviceWorker.register('/sw.js');
     await navigator.serviceWorker.ready;
-
-    const permission = await Notification.requestPermission();
-    if (permission !== 'granted') return;
 
     const subscription = await registration.pushManager.subscribe({
       userVisibleOnly: true,
       applicationServerKey: urlBase64ToUint8Array(vapidKey),
     });
+    console.log('[Push] Subscription:', subscription.endpoint.slice(0, 60) + '...');
 
-    const base = apiUrl.trim().replace(/\/$/, '');
-    await fetch(`${base}/api/push/subscribe`, {
+    const res = await fetch(`${base}/api/push/subscribe`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
       body: JSON.stringify({ userId, subscription }),
     });
+    console.log('[Push] Saved:', res.status);
   } catch (err) {
-    console.error('Push registration error:', err);
+    console.error('[Push] registerPush error:', err);
+  }
+}
+
+export async function enablePush(userId: number, apiUrl: string, token: string): Promise<PushStatus> {
+  if (typeof window === 'undefined') return 'unsupported';
+  if (!('serviceWorker' in navigator) || !('PushManager' in window) || !('Notification' in window)) return 'unsupported';
+
+  try {
+    const permission = await Notification.requestPermission();
+    console.log('[Push] Permission:', permission);
+    if (permission !== 'granted') return permission as PushStatus;
+
+    const base = apiUrl.trim().replace(/\/$/, '');
+    const vapidKey = await fetchVapidKey(base, token);
+
+    const registration = await navigator.serviceWorker.register('/sw.js');
+    await navigator.serviceWorker.ready;
+
+    const existing = await registration.pushManager.getSubscription();
+    if (existing) await existing.unsubscribe();
+
+    const subscription = await registration.pushManager.subscribe({
+      userVisibleOnly: true,
+      applicationServerKey: urlBase64ToUint8Array(vapidKey),
+    });
+    console.log('[Push] New subscription:', subscription.endpoint.slice(0, 60) + '...');
+
+    const res = await fetch(`${base}/api/push/subscribe`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+      body: JSON.stringify({ userId, subscription }),
+    });
+    console.log('[Push] Saved:', res.status, await res.text());
+    return 'granted';
+  } catch (err) {
+    console.error('[Push] enablePush error:', err);
+    return 'denied';
   }
 }
