@@ -428,7 +428,9 @@ export default function Home() {
   const startCall = async (targetUserId: number, targetName: string, targetAvatar?: string, type: 'audio' | 'video' = 'audio') => {
     if (!socketRef.current || !user) return;
     try {
-      const constraints = type === 'video' ? { audio: true, video: true } : { audio: true };
+      const constraints = type === 'video'
+        ? { audio: true, video: { facingMode: 'user', width: { ideal: 1280 }, height: { ideal: 720 } } }
+        : { audio: true };
       const stream = await navigator.mediaDevices.getUserMedia(constraints);
       localStreamRef.current = stream;
       setLocalStream(stream);
@@ -449,7 +451,9 @@ export default function Home() {
   const acceptCall = async () => {
     if (!socketRef.current || !user || !pendingOffer || !callPeer) return;
     try {
-      const constraints = callType === 'video' ? { audio: true, video: true } : { audio: true };
+      const constraints = callType === 'video'
+        ? { audio: true, video: { facingMode: 'user', width: { ideal: 1280 }, height: { ideal: 720 } } }
+        : { audio: true };
       const stream = await navigator.mediaDevices.getUserMedia(constraints);
       localStreamRef.current = stream;
       setLocalStream(stream);
