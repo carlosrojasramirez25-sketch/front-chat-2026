@@ -110,6 +110,45 @@ function AudioPlayer({ src, isMe }: { src: string; isMe: boolean }) {
   const [isPlaying, setIsPlaying] = useState(false);
   const [currentTime, setCurrentTime] = useState(0);
   const [duration, setDuration] = useState(0);
+  const fixingDurationRef = useRef(false);
+
+  useEffect(() => {
+    const audio = audioRef.current;
+    if (!audio) return;
+
+    const onDurationChange = () => {
+      const d = audio.duration;
+      if (isFinite(d) && d > 0) {
+        setDuration(d);
+        // If we seeked to fix duration, reset position to start
+        if (fixingDurationRef.current) {
+          fixingDurationRef.current = false;
+          audio.currentTime = 0;
+          setCurrentTime(0);
+        }
+      }
+    };
+
+    // MediaRecorder (WebM/OGG) files don't write duration in the header.
+    // Seeking to a huge timestamp forces the browser to scan the file and
+    // report the real duration via durationchange.
+    const onLoadedData = () => {
+      if (!isFinite(audio.duration)) {
+        fixingDurationRef.current = true;
+        audio.currentTime = 1e101;
+      }
+    };
+
+    audio.addEventListener('loadedmetadata', onDurationChange);
+    audio.addEventListener('durationchange', onDurationChange);
+    audio.addEventListener('loadeddata', onLoadedData, { once: true });
+
+    return () => {
+      audio.removeEventListener('loadedmetadata', onDurationChange);
+      audio.removeEventListener('durationchange', onDurationChange);
+      audio.removeEventListener('loadeddata', onLoadedData);
+    };
+  }, [src]);
 
   const toggle = () => {
     const audio = audioRef.current;
@@ -128,7 +167,7 @@ function AudioPlayer({ src, isMe }: { src: string; isMe: boolean }) {
   };
 
   const fmt = (s: number) => {
-    if (!isFinite(s) || isNaN(s)) return '0:00';
+    if (!isFinite(s) || isNaN(s) || s <= 0) return '0:00';
     return `${Math.floor(s / 60)}:${String(Math.floor(s % 60)).padStart(2, '0')}`;
   };
 
@@ -141,7 +180,6 @@ function AudioPlayer({ src, isMe }: { src: string; isMe: boolean }) {
         src={src}
         preload="metadata"
         onTimeUpdate={(e) => setCurrentTime((e.target as HTMLAudioElement).currentTime)}
-        onLoadedMetadata={(e) => setDuration((e.target as HTMLAudioElement).duration)}
         onEnded={() => { setIsPlaying(false); setCurrentTime(0); }}
       />
       <button
