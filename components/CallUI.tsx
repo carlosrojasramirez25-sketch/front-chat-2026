@@ -42,6 +42,7 @@ export default function CallUI({
   useEffect(() => {
     const el = localVideoRef.current;
     if (!el || !localStream) return;
+    el.muted = true;       // React doesn't reliably apply the muted prop to the DOM
     el.srcObject = localStream;
     el.play().catch(() => {});
   }, [localStream]);
