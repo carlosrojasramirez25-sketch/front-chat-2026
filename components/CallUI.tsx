@@ -50,14 +50,11 @@ export default function CallUI({
   useEffect(() => {
     const el = remoteVideoRef.current;
     if (!el || !remoteStream) return;
-
-    const attach = () => {
-      el.srcObject = remoteStream;
-      el.play().catch(() => {});
-    };
-    attach();
-    remoteStream.addEventListener('addtrack', attach);
-    return () => remoteStream.removeEventListener('addtrack', attach);
+    // Muted so Chrome mobile's autoplay policy allows playback regardless of gesture timing.
+    // Audio is handled by the hidden remoteAudioRef in page.tsx.
+    el.muted = true;
+    el.srcObject = remoteStream;
+    el.play().catch(() => {});
   }, [remoteStream]);
 
   const toggleCamera = () => {

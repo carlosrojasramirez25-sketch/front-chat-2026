@@ -416,9 +416,9 @@ export default function Home() {
       }
     };
     peer.ontrack = (e) => {
-      const stream = e.streams[0];
-      if (e.track.kind === 'audio' && remoteAudioRef.current && stream) {
-        remoteAudioRef.current.srcObject = stream;
+      if (e.track.kind === 'audio' && remoteAudioRef.current) {
+        remoteAudioRef.current.srcObject = new MediaStream([e.track]);
+        remoteAudioRef.current.play().catch(() => {});
       }
       // Accumulate tracks from e.track (not stream.getTracks() which may be empty at fire time).
       // Functional update creates a new MediaStream reference each time a track is added,
