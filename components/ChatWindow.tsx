@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect, useRef } from 'react';
-import { Send, Hash, MessageSquare, AlertCircle, Loader2, ChevronLeft, MoreHorizontal, Pencil, Trash2, Check, X, Paperclip, ImagePlus, Camera, Sticker, Reply, Phone, Mic, Play, Pause, Palette } from 'lucide-react';
+import { Send, Hash, MessageSquare, AlertCircle, Loader2, ChevronLeft, MoreHorizontal, Pencil, Trash2, Check, X, Paperclip, ImagePlus, Camera, Sticker, Reply, Phone, Video, Mic, Play, Pause, Palette } from 'lucide-react';
 import { Socket } from 'socket.io-client';
 import type { Conversation } from '@/app/page';
 
@@ -43,6 +43,7 @@ interface ChatWindowProps {
   contactAvatars?: Record<number, string>;
   onSaveContactAvatar?: (contactId: number, dataUrl: string) => void;
   onCall?: (userId: number, name: string, avatar?: string) => void;
+  onVideoCall?: (userId: number, name: string, avatar?: string) => void;
 }
 
 // ─── Stickers ────────────────────────────────────────────────────────────────
@@ -195,6 +196,7 @@ export default function ChatWindow({
   contactAvatars,
   onSaveContactAvatar,
   onCall,
+  onVideoCall,
 }: ChatWindowProps) {
   const [messages, setMessages] = useState<Message[]>([]);
   const [loadingHistory, setLoadingHistory] = useState(false);
@@ -778,6 +780,17 @@ export default function ChatWindow({
             title="Llamada de voz"
           >
             <Phone className="w-4 h-4" />
+          </button>
+        )}
+
+        {/* Video call button */}
+        {!isEditingName && !showDeleteConfirm && onVideoCall && activeConversation?.participant?.id && (
+          <button
+            onClick={() => onVideoCall(activeConversation.participant.id, activeConversation.participant.name, activeConversation.participant.avatar)}
+            className="p-2 hover:bg-zinc-900/60 text-zinc-400 hover:text-violet-400 rounded-xl transition-all border border-transparent hover:border-zinc-800 shrink-0"
+            title="Videollamada"
+          >
+            <Video className="w-4 h-4" />
           </button>
         )}
 

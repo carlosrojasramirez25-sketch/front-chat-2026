@@ -130,12 +130,16 @@ export default function Home() {
 
   // ── Call state ────────────────────────────────────────────────────────────
   const [callStatus, setCallStatus] = useState<CallStatus>('idle');
+  const [callType, setCallType] = useState<'audio' | 'video'>('audio');
   const [callPeer, setCallPeer] = useState<{ userId: number; name: string; avatar?: string } | null>(null);
   const [isMuted, setIsMuted] = useState(false);
   const [pendingOffer, setPendingOffer] = useState<RTCSessionDescriptionInit | null>(null);
+  const [localStream, setLocalStream] = useState<MediaStream | null>(null);
+  const [remoteStream, setRemoteStream] = useState<MediaStream | null>(null);
   const peerRef = useRef<RTCPeerConnection | null>(null);
   const localStreamRef = useRef<MediaStream | null>(null);
   const remoteAudioRef = useRef<HTMLAudioElement | null>(null);
+  const iceCandidateQueueRef = useRef<RTCIceCandidateInit[]>([]);
 
   // ── User presence ─────────────────────────────────────────────────────────
   const [userStatuses, setUserStatuses] = useState<Record<number, { status: string; lastSeenAt: string | null }>>({});
@@ -218,9 +222,13 @@ export default function Home() {
     peerRef.current = null;
     localStreamRef.current?.getTracks().forEach((t) => t.stop());
     localStreamRef.current = null;
+    iceCandidateQueueRef.current = [];
     if (remoteAudioRef.current) remoteAudioRef.current.srcObject = null;
+    setLocalStream(null);
+    setRemoteStream(null);
     setCallStatus('idle');
     setCallPeer(null);
+    setCallType('audio');
     setPendingOffer(null);
     setIsMuted(false);
   }, []);
@@ -294,8 +302,9 @@ export default function Home() {
       );
     };
 
-    const onIncomingCall = (data: { callerId: number; callerName: string; offer: RTCSessionDescriptionInit }) => {
+    const onIncomingCall = (data: { callerId: number; callerName: string; offer: RTCSessionDescriptionInit; callType?: 'audio' | 'video' }) => {
       setPendingOffer(data.offer);
+      setCallType(data.callType ?? 'audio');
       setCallPeer({ userId: data.callerId, name: data.callerName });
       setCallStatus('incoming');
     };
@@ -303,6 +312,10 @@ export default function Home() {
     const onCallAnswered = async (data: { answer: RTCSessionDescriptionInit }) => {
       if (peerRef.current) {
         await peerRef.current.setRemoteDescription(new RTCSessionDescription(data.answer));
+        for (const c of iceCandidateQueueRef.current) {
+          await peerRef.current.addIceCandidate(new RTCIceCandidate(c)).catch(() => {});
+        }
+        iceCandidateQueueRef.current = [];
         setCallStatus('active');
       }
     };
@@ -316,8 +329,11 @@ export default function Home() {
     };
 
     const onIceCandidate = async (data: { candidate: RTCIceCandidateInit }) => {
-      if (peerRef.current && data.candidate) {
+      if (!data.candidate) return;
+      if (peerRef.current?.remoteDescription) {
         await peerRef.current.addIceCandidate(new RTCIceCandidate(data.candidate)).catch(() => {});
+      } else {
+        iceCandidateQueueRef.current.push(data.candidate);
       }
     };
 
@@ -368,24 +384,31 @@ export default function Home() {
       }
     };
     peer.ontrack = (e) => {
-      if (remoteAudioRef.current) remoteAudioRef.current.srcObject = e.streams[0];
+      const stream = e.streams[0];
+      if (e.track.kind === 'audio' && remoteAudioRef.current) {
+        remoteAudioRef.current.srcObject = stream;
+      }
+      setRemoteStream(stream);
     };
     return peer;
   };
 
-  const startCall = async (targetUserId: number, targetName: string, targetAvatar?: string) => {
+  const startCall = async (targetUserId: number, targetName: string, targetAvatar?: string, type: 'audio' | 'video' = 'audio') => {
     if (!socketRef.current || !user) return;
     try {
-      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      const constraints = type === 'video' ? { audio: true, video: true } : { audio: true };
+      const stream = await navigator.mediaDevices.getUserMedia(constraints);
       localStreamRef.current = stream;
+      setLocalStream(stream);
       const peer = createPeer(targetUserId);
       stream.getTracks().forEach((t) => peer.addTrack(t, stream));
       const offer = await peer.createOffer();
       await peer.setLocalDescription(offer);
       peerRef.current = peer;
+      setCallType(type);
       setCallPeer({ userId: targetUserId, name: targetName, avatar: targetAvatar });
       setCallStatus('calling');
-      socketRef.current.emit('callOffer', { targetUserId, callerId: user.id, callerName: user.name, offer, conversationId: activeRoomId });
+      socketRef.current.emit('callOffer', { targetUserId, callerId: user.id, callerName: user.name, offer, callType: type, conversationId: activeRoomId });
     } catch {
       cleanupCall();
     }
@@ -394,11 +417,17 @@ export default function Home() {
   const acceptCall = async () => {
     if (!socketRef.current || !user || !pendingOffer || !callPeer) return;
     try {
-      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      const constraints = callType === 'video' ? { audio: true, video: true } : { audio: true };
+      const stream = await navigator.mediaDevices.getUserMedia(constraints);
       localStreamRef.current = stream;
+      setLocalStream(stream);
       const peer = createPeer(callPeer.userId);
       stream.getTracks().forEach((t) => peer.addTrack(t, stream));
       await peer.setRemoteDescription(new RTCSessionDescription(pendingOffer));
+      for (const c of iceCandidateQueueRef.current) {
+        await peer.addIceCandidate(new RTCIceCandidate(c)).catch(() => {});
+      }
+      iceCandidateQueueRef.current = [];
       const answer = await peer.createAnswer();
       await peer.setLocalDescription(answer);
       peerRef.current = peer;
@@ -562,6 +591,9 @@ export default function Home() {
           remoteName={callPeer.name}
           remoteAvatar={callPeer.avatar}
           isMuted={isMuted}
+          callType={callType}
+          localStream={localStream}
+          remoteStream={remoteStream}
           onAccept={acceptCall}
           onReject={rejectCall}
           onHangUp={hangUp}
@@ -606,7 +638,8 @@ export default function Home() {
         userStatuses={userStatuses}
         contactAvatars={contactAvatars}
         onSaveContactAvatar={handleSaveContactAvatar}
-        onCall={(userId, name, avatar) => startCall(userId, name, avatar)}
+        onCall={(userId, name, avatar) => startCall(userId, name, avatar, 'audio')}
+        onVideoCall={(userId, name, avatar) => startCall(userId, name, avatar, 'video')}
       />
     </main>
   );
