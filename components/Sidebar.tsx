@@ -9,8 +9,6 @@ import {
   UserX,
   Loader2,
   AlertCircle,
-  Plus,
-  Mail,
   Pencil,
   Trash2,
   Check,
@@ -506,25 +504,20 @@ export default function Sidebar({
 
         {/* ── New Chat Search ── */}
         <div>
-          <p className="text-[10px] font-bold text-zinc-500 uppercase tracking-widest mb-2 px-1 flex items-center gap-1.5">
-            <Plus className="w-3 h-3" /> New Conversation
-          </p>
-
-          <form onSubmit={handleSearch} className="flex gap-2">
-            <div className="relative flex-1">
-              <Mail className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-zinc-500" />
+          <form onSubmit={handleSearch}>
+            <div className="flex items-center gap-2 bg-zinc-800/80 border border-zinc-700 rounded-2xl px-4 py-3 focus-within:border-violet-500/60 focus-within:ring-1 focus-within:ring-violet-500/20 transition-all">
               <input
                 type="email"
                 value={searchEmail}
                 onChange={(e) => { setSearchEmail(e.target.value); setFoundUser(null); setSearchError(null); }}
-                placeholder="Search by email..."
-                className="w-full bg-zinc-900/60 border border-zinc-800 rounded-xl pl-8 pr-3 py-2 text-xs text-white placeholder-zinc-500 focus:outline-none focus:border-violet-500 focus:ring-1 focus:ring-violet-500/30 transition-all"
+                placeholder="Buscar por email..."
+                className="flex-1 bg-transparent text-sm text-zinc-100 placeholder-zinc-500 focus:outline-none"
               />
+              <button type="submit" disabled={searching || !searchEmail.trim()}
+                className="shrink-0 text-zinc-400 hover:text-violet-400 disabled:text-zinc-600 transition-colors disabled:cursor-not-allowed">
+                {searching ? <Loader2 className="w-4 h-4 animate-spin" /> : <Search className="w-4 h-4" />}
+              </button>
             </div>
-            <button type="submit" disabled={searching || !searchEmail.trim()}
-              className="p-2 bg-zinc-900 hover:bg-violet-600 disabled:hover:bg-zinc-900 text-zinc-400 hover:text-white disabled:text-zinc-600 rounded-xl border border-zinc-800 transition-all disabled:cursor-not-allowed shrink-0">
-              {searching ? <Loader2 className="w-4 h-4 animate-spin" /> : <Search className="w-4 h-4" />}
-            </button>
           </form>
 
           {/* Search Error */}
