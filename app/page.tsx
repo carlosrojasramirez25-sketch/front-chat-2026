@@ -420,7 +420,10 @@ export default function Home() {
       if (e.track.kind === 'audio' && remoteAudioRef.current) {
         remoteAudioRef.current.srcObject = stream;
       }
-      setRemoteStream(stream);
+      // New MediaStream reference on every track so CallUI's useEffect always re-runs.
+      // Without this, audio arrives first → same object → React skips re-render when
+      // the video track arrives → video element never gets the video track.
+      setRemoteStream(new MediaStream(stream.getTracks()));
     };
     return peer;
   };
