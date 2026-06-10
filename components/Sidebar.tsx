@@ -18,9 +18,12 @@ import {
   MoreHorizontal,
   User,
   Camera,
+  Sun,
+  Moon,
 } from 'lucide-react';
 import type { Socket } from 'socket.io-client';
 import type { Conversation } from '@/app/page';
+import { useTheme } from '@/app/providers';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -106,6 +109,7 @@ export default function Sidebar({
   const [profileImage, setProfileImage] = useState<string | null>(null);
   const [savedDisplayName, setSavedDisplayName] = useState('');
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const { theme, toggle: toggleTheme } = useTheme();
 
   // Load saved avatar + display name on mount
   useEffect(() => {
@@ -349,14 +353,14 @@ export default function Sidebar({
       {/* ── Edit Profile Modal (fixed overlay) ── */}
       {showEditProfile && (
         <div
-          className="fixed inset-0 z-50 flex items-end justify-end p-4 md:items-end md:justify-end"
+          className="fixed inset-0 z-50 flex items-center justify-center"
           onMouseDown={(e) => { if (e.target === e.currentTarget) setShowEditProfile(false); }}
         >
           {/* Backdrop */}
           <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" />
 
           {/* Card — slides up from the bottom-right (chat input area) */}
-          <div className="relative w-full max-w-sm bg-zinc-900 border border-zinc-800 rounded-2xl shadow-2xl overflow-hidden">
+          <div className="relative w-full h-full bg-zinc-900 overflow-y-auto">
             {/* Gradient accent bar */}
             <div className="h-1 w-full bg-gradient-to-r from-violet-600 to-fuchsia-600" />
 
@@ -735,6 +739,15 @@ export default function Sidebar({
             <p className="text-sm font-semibold text-zinc-200 truncate leading-none">{savedDisplayName}</p>
             <p className="text-[10px] text-zinc-500 truncate mt-0.5">{user.email}</p>
           </div>
+
+          {/* Theme toggle */}
+          <button
+            onClick={toggleTheme}
+            className="shrink-0 p-2 hover:bg-zinc-800 text-zinc-500 hover:text-violet-400 rounded-xl transition-all"
+            title={theme === 'dark' ? 'Modo claro' : 'Modo oscuro'}
+          >
+            {theme === 'dark' ? <Sun className="w-4 h-4" /> : <Moon className="w-4 h-4" />}
+          </button>
 
           {/* Logout */}
           <button

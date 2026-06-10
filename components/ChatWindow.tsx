@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect, useRef } from 'react';
-import { Send, Hash, CornerDownLeft, MessageSquare, AlertCircle, Loader2, ChevronLeft, MoreHorizontal, Pencil, Trash2, Check, X, ImagePlus, Sticker, Reply, Phone, Mic, Play, Pause } from 'lucide-react';
+import { Send, Hash, CornerDownLeft, MessageSquare, AlertCircle, Loader2, ChevronLeft, MoreHorizontal, Pencil, Trash2, Check, X, ImagePlus, Camera, Sticker, Reply, Phone, Mic, Play, Pause, Palette } from 'lucide-react';
 import { Socket } from 'socket.io-client';
 import type { Conversation } from '@/app/page';
 
@@ -54,6 +54,29 @@ const STICKERS: Record<string, string[]> = {
   'Celebración': ['🎉','🎊','🎁','🔥','💯','✨','🌟','⭐','🏆','🎯','🚀','💥','🎶','🎸','🌈'],
 };
 
+// ─── Background presets ───────────────────────────────────────────────────────
+const BG_PRESETS = [
+  { label: 'Default',  value: null,                                                        style: { background: '#09090b' } },
+  { label: 'Violeta',  value: 'linear-gradient(160deg,#1e1b4b 0%,#0d0d14 100%)',           style: { background: 'linear-gradient(160deg,#1e1b4b 0%,#0d0d14 100%)' } },
+  { label: 'Azul',     value: 'linear-gradient(160deg,#0c1a3b 0%,#060d1f 100%)',           style: { background: 'linear-gradient(160deg,#0c1a3b 0%,#060d1f 100%)' } },
+  { label: 'Verde',    value: 'linear-gradient(160deg,#052e16 0%,#0a0f0d 100%)',           style: { background: 'linear-gradient(160deg,#052e16 0%,#0a0f0d 100%)' } },
+  { label: 'Rosa',     value: 'linear-gradient(160deg,#3b0a2a 0%,#150010 100%)',           style: { background: 'linear-gradient(160deg,#3b0a2a 0%,#150010 100%)' } },
+  { label: 'Ambar',    value: 'linear-gradient(160deg,#1c0a00 0%,#0f0a00 100%)',           style: { background: 'linear-gradient(160deg,#1c0a00 0%,#0f0a00 100%)' } },
+  { label: 'Negro',    value: '#000000',                                                   style: { background: '#000000' } },
+];
+
+function getChatBgStyle(bg: string | null): React.CSSProperties {
+  if (!bg) return {};
+  if (bg.startsWith('data:') || bg.startsWith('http')) {
+    return {
+      backgroundImage: `linear-gradient(rgba(0,0,0,0.45), rgba(0,0,0,0.45)), url(${bg})`,
+      backgroundSize: 'cover',
+      backgroundPosition: 'center',
+    };
+  }
+  return { background: bg };
+}
+
 function isStickerMsg(content: string | null): boolean {
   if (!content) return false;
   const t = content.trim();
@@ -98,7 +121,9 @@ function AudioPlayer({ src, isMe }: { src: string; isMe: boolean }) {
     const audio = audioRef.current;
     if (!audio || !duration) return;
     const rect = e.currentTarget.getBoundingClientRect();
-    audio.currentTime = ((e.clientX - rect.left) / rect.width) * duration;
+    if (!rect.width) return;
+    const newTime = ((e.clientX - rect.left) / rect.width) * duration;
+    if (isFinite(newTime) && newTime >= 0) audio.currentTime = newTime;
   };
 
   const fmt = (s: number) => {
@@ -130,21 +155,20 @@ function AudioPlayer({ src, isMe }: { src: string; isMe: boolean }) {
           : <Play className="w-3.5 h-3.5 ml-0.5" />}
       </button>
       <div className="flex-1 flex flex-col gap-1 min-w-0">
-        <div className="flex items-end gap-[2px] h-4 cursor-pointer" onClick={handleSeek}>
-          {WAVEFORM.map((h, i) => {
-            const active = (i / WAVEFORM.length) * 100 <= progress;
-            return (
-              <div
-                key={i}
-                style={{ height: `${h}px` }}
-                className={`flex-1 rounded-full transition-colors ${
-                  active
-                    ? (isMe ? 'bg-fuchsia-200' : 'bg-violet-400')
-                    : (isMe ? 'bg-white/25' : 'bg-zinc-600')
-                }`}
-              />
-            );
-          })}
+        <div className="relative flex items-end gap-[2px] h-4 cursor-pointer" onClick={handleSeek}>
+          {/* Barras inactivas (fondo) */}
+          {WAVEFORM.map((h, i) => (
+            <div key={i} style={{ height: `${h}px` }} className={`flex-1 rounded-full ${isMe ? 'bg-white/20' : 'bg-zinc-600'}`} />
+          ))}
+          {/* Barras activas recortadas al progreso con clipPath */}
+          <div
+            className="absolute inset-0 flex items-end gap-[2px] pointer-events-none"
+            style={{ clipPath: `inset(0 ${100 - progress}% 0 0)` }}
+          >
+            {WAVEFORM.map((h, i) => (
+              <div key={i} style={{ height: `${h}px` }} className={`flex-1 rounded-full ${isMe ? 'bg-white' : 'bg-violet-400'}`} />
+            ))}
+          </div>
         </div>
         <div className={`flex justify-between text-[9px] font-mono tabular-nums ${isMe ? 'text-white/50' : 'text-zinc-500'}`}>
           <span>{fmt(currentTime)}</span>
@@ -185,12 +209,18 @@ export default function ChatWindow({
   const [showStickerPicker, setShowStickerPicker] = useState(false);
   const [activeStickerTab, setActiveStickerTab] = useState('Caras');
   const [replyingTo, setReplyingTo] = useState<Message | null>(null);
+  const [showBgPicker, setShowBgPicker] = useState(false);
+  const [chatBg, setChatBg] = useState<string | null>(null);
+  const [showImageMenu, setShowImageMenu] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const typingTimeoutRef = useRef<{ [userId: number]: NodeJS.Timeout }>({});
   const lastTypingEmitRef = useRef<number>(0);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const cameraInputRef = useRef<HTMLInputElement>(null);
+  const bgImageInputRef = useRef<HTMLInputElement>(null);
   const stickerPickerRef = useRef<HTMLDivElement>(null);
+  const imageMenuRef = useRef<HTMLDivElement>(null);
   const longPressTimerRef = useRef<NodeJS.Timeout | null>(null);
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const audioChunksRef = useRef<Blob[]>([]);
@@ -243,7 +273,32 @@ export default function ChatWindow({
       clearInterval(recordingIntervalRef.current);
       recordingIntervalRef.current = null;
     }
+    setShowBgPicker(false);
+    const savedBg = activeRoomId ? localStorage.getItem(`chat_bg_${activeRoomId}`) : null;
+    setChatBg(savedBg || null);
   }, [activeRoomId]);
+
+  // ── Background ────────────────────────────────────────────────────────────
+  const applyBackground = (bg: string | null) => {
+    setChatBg(bg);
+    if (activeRoomId) {
+      if (bg) localStorage.setItem(`chat_bg_${activeRoomId}`, bg);
+      else localStorage.removeItem(`chat_bg_${activeRoomId}`);
+    }
+    setShowBgPicker(false);
+  };
+
+  const handleBgImageUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = (ev) => {
+      const result = ev.target?.result as string;
+      if (result) applyBackground(result);
+    };
+    reader.readAsDataURL(file);
+    if (bgImageInputRef.current) bgImageInputRef.current.value = '';
+  };
 
   // ── Long press (mobile reply) ─────────────────────────────────────────────
   const startLongPress = (msg: Message) => {
@@ -401,20 +456,23 @@ export default function ChatWindow({
     return () => document.removeEventListener('mousedown', handler);
   }, [showStickerPicker]);
 
+  // ── Close image menu on outside click ────────────────────────────────────
+  useEffect(() => {
+    if (!showImageMenu) return;
+    const handler = (e: MouseEvent) => {
+      if (imageMenuRef.current && !imageMenuRef.current.contains(e.target as Node)) {
+        setShowImageMenu(false);
+      }
+    };
+    document.addEventListener('mousedown', handler);
+    return () => document.removeEventListener('mousedown', handler);
+  }, [showImageMenu]);
+
   // ── Send sticker ──────────────────────────────────────────────────────────
   const handleSendSticker = (emoji: string) => {
-    if (!activeRoomId || !socket) return;
     setShowStickerPicker(false);
-    const optimistic: Message = {
-      id: `opt-${Date.now()}`,
-      content: emoji,
-      conversation_id: activeRoomId,
-      sender_id: currentUser.id,
-      users: { id: currentUser.id, name: currentUser.name, email: currentUser.email },
-      created_at: new Date().toISOString(),
-    };
-    setMessages((prev) => [...prev, optimistic]);
-    socket.emit('sendMessage', { conversation_id: activeRoomId, sender_id: currentUser.id, content: emoji });
+    setInputValue((prev) => prev + emoji);
+    setTimeout(() => textareaRef.current?.focus(), 0);
   };
 
   // ── Image select ──────────────────────────────────────────────────────────
@@ -723,6 +781,57 @@ export default function ChatWindow({
           </button>
         )}
 
+        {/* Background picker button */}
+        {!isEditingName && !showDeleteConfirm && (
+          <div className="relative shrink-0">
+            <button
+              onClick={() => setShowBgPicker((v) => !v)}
+              className={`p-2 rounded-xl transition-all border border-transparent hover:border-zinc-800 shrink-0 ${showBgPicker ? 'bg-violet-600 text-white' : 'hover:bg-zinc-900/60 text-zinc-400 hover:text-violet-400'}`}
+              title="Fondo del chat"
+            >
+              <Palette className="w-4 h-4" />
+            </button>
+
+            {showBgPicker && (
+              <div className="absolute right-0 top-full mt-1 w-64 bg-zinc-900 border border-zinc-800 rounded-xl shadow-xl z-50 p-3">
+                <p className="text-[10px] font-bold text-zinc-500 uppercase tracking-wider mb-2">Color de fondo</p>
+                <div className="grid grid-cols-4 gap-1.5 mb-3">
+                  {BG_PRESETS.map((preset) => (
+                    <button
+                      key={preset.label}
+                      type="button"
+                      onClick={() => applyBackground(preset.value)}
+                      title={preset.label}
+                      className={`h-10 rounded-lg border-2 transition-all ${chatBg === preset.value ? 'border-violet-500' : 'border-transparent hover:border-zinc-600'}`}
+                      style={preset.value ? preset.style : { background: '#09090b' }}
+                    >
+                      {!preset.value && <span className="text-[9px] text-zinc-500">Default</span>}
+                    </button>
+                  ))}
+                </div>
+                <button
+                  type="button"
+                  onClick={() => bgImageInputRef.current?.click()}
+                  className="w-full flex items-center justify-center gap-2 py-2 rounded-lg bg-zinc-800 hover:bg-zinc-700 text-xs text-zinc-300 transition-colors"
+                >
+                  <ImagePlus className="w-3.5 h-3.5" />
+                  Subir imagen
+                </button>
+                {chatBg && (
+                  <button
+                    type="button"
+                    onClick={() => applyBackground(null)}
+                    className="w-full mt-1.5 flex items-center justify-center gap-2 py-2 rounded-lg bg-zinc-800/50 hover:bg-red-950/40 text-xs text-zinc-500 hover:text-red-400 transition-colors"
+                  >
+                    <X className="w-3.5 h-3.5" />
+                    Quitar fondo
+                  </button>
+                )}
+              </div>
+            )}
+          </div>
+        )}
+
         {/* Three-dot menu — hidden while editing/confirming */}
         {!isEditingName && !showDeleteConfirm && (
           <div className="relative shrink-0" ref={menuRef}>
@@ -763,8 +872,11 @@ export default function ChatWindow({
         )}
       </div>
 
+      {/* Hidden bg image input */}
+      <input ref={bgImageInputRef} type="file" accept="image/*" className="hidden" onChange={handleBgImageUpload} />
+
       {/* Messages */}
-      <div className="flex-1 min-h-0 overflow-y-auto px-4 py-6 space-y-6 scrollbar-thin overflow-x-hidden">
+      <div className="flex-1 min-h-0 overflow-y-auto px-4 py-6 space-y-6 scrollbar-thin overflow-x-hidden" style={getChatBgStyle(chatBg)}>
 
         {loadingHistory && (
           <div className="flex justify-center py-8">
@@ -904,6 +1016,14 @@ export default function ChatWindow({
           className="hidden"
           onChange={handleImageSelect}
         />
+        <input
+          ref={cameraInputRef}
+          type="file"
+          accept="image/*"
+          capture="environment"
+          className="hidden"
+          onChange={handleImageSelect}
+        />
 
         {/* Reply preview strip */}
         {replyingTo && (
@@ -1005,16 +1125,38 @@ export default function ChatWindow({
           </div>
         ) : (
           <form onSubmit={handleSendMessage} className="relative flex items-end gap-2 bg-zinc-900/50 border border-zinc-800 rounded-2xl p-2 focus-within:border-violet-500/80 focus-within:ring-2 focus-within:ring-violet-500/10 transition-all">
-            {/* Image button */}
-            <button
-              type="button"
-              onClick={() => fileInputRef.current?.click()}
-              disabled={isUploadingImage || isUploadingAudio}
-              className="p-2 bg-zinc-800 text-violet-400 hover:bg-violet-600 hover:text-white rounded-xl transition-all shrink-0 self-end mb-0.5 disabled:opacity-40 disabled:cursor-not-allowed"
-              title="Adjuntar imagen"
-            >
-              <ImagePlus className="w-5 h-5" />
-            </button>
+            {/* Image / Camera unified button */}
+            <div ref={imageMenuRef} className="relative shrink-0 self-end mb-0.5">
+              <button
+                type="button"
+                onClick={() => setShowImageMenu((v) => !v)}
+                disabled={isUploadingImage || isUploadingAudio}
+                className={`p-2 rounded-xl transition-all disabled:opacity-40 disabled:cursor-not-allowed ${showImageMenu ? 'bg-violet-600 text-white' : 'bg-zinc-800 text-violet-400 hover:bg-violet-600 hover:text-white'}`}
+                title="Foto"
+              >
+                <ImagePlus className="w-5 h-5" />
+              </button>
+              {showImageMenu && (
+                <div className="absolute bottom-full left-0 mb-2 bg-zinc-900 border border-zinc-800 rounded-xl shadow-2xl overflow-hidden z-50 min-w-[150px]">
+                  <button
+                    type="button"
+                    onClick={() => { setShowImageMenu(false); fileInputRef.current?.click(); }}
+                    className="flex items-center gap-2.5 w-full px-3 py-2.5 text-sm text-zinc-300 hover:bg-zinc-800 hover:text-white transition-colors"
+                  >
+                    <ImagePlus className="w-4 h-4 text-violet-400" />
+                    Galería
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => { setShowImageMenu(false); cameraInputRef.current?.click(); }}
+                    className="flex items-center gap-2.5 w-full px-3 py-2.5 text-sm text-zinc-300 hover:bg-zinc-800 hover:text-white transition-colors"
+                  >
+                    <Camera className="w-4 h-4 text-violet-400" />
+                    Tomar foto
+                  </button>
+                </div>
+              )}
+            </div>
 
             {/* Sticker button */}
             <button
@@ -1025,17 +1167,6 @@ export default function ChatWindow({
               title="Stickers"
             >
               <Sticker className="w-5 h-5" />
-            </button>
-
-            {/* Mic button */}
-            <button
-              type="button"
-              onClick={handleStartRecording}
-              disabled={isUploadingImage || isUploadingAudio}
-              className="p-2 bg-zinc-800 text-violet-400 hover:bg-red-600 hover:text-white rounded-xl transition-all shrink-0 self-end mb-0.5 disabled:opacity-40 disabled:cursor-not-allowed"
-              title="Grabar audio"
-            >
-              <Mic className="w-5 h-5" />
             </button>
 
             <textarea
@@ -1050,18 +1181,31 @@ export default function ChatWindow({
             />
 
             <div className="flex items-center gap-2 pr-1.5 pb-1">
-              <span className="text-[10px] text-zinc-600 hidden md:flex items-center gap-1 bg-zinc-950/80 border border-zinc-800 py-1 px-2 rounded-lg">
-                <span>Enter to send</span>
-                <CornerDownLeft className="w-2.5 h-2.5" />
-              </span>
+              {(inputValue.trim() || imageFile) && (
+                <span className="text-[10px] text-zinc-600 hidden md:flex items-center gap-1 bg-zinc-950/80 border border-zinc-800 py-1 px-2 rounded-lg">
+                  <span>Enter to send</span>
+                  <CornerDownLeft className="w-2.5 h-2.5" />
+                </span>
+              )}
 
-              <button
-                type="submit"
-                disabled={(!inputValue.trim() && !imageFile) || isUploadingImage || isUploadingAudio}
-                className="p-2.5 bg-gradient-to-tr from-violet-600 to-fuchsia-600 hover:from-violet-500 hover:to-fuchsia-500 disabled:from-zinc-900 disabled:to-zinc-900 text-white disabled:text-zinc-600 rounded-xl transition-all shadow-md shadow-violet-600/10 active:scale-[0.96] disabled:cursor-not-allowed"
-              >
-                {isUploadingImage || isUploadingAudio ? <Loader2 className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4" />}
-              </button>
+              {inputValue.trim() || imageFile ? (
+                <button
+                  type="submit"
+                  disabled={isUploadingImage || isUploadingAudio}
+                  className="p-2.5 bg-gradient-to-tr from-violet-600 to-fuchsia-600 hover:from-violet-500 hover:to-fuchsia-500 disabled:from-zinc-900 disabled:to-zinc-900 text-white disabled:text-zinc-600 rounded-xl transition-all shadow-md shadow-violet-600/10 active:scale-[0.96] disabled:cursor-not-allowed"
+                >
+                  {isUploadingImage || isUploadingAudio ? <Loader2 className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4" />}
+                </button>
+              ) : (
+                <button
+                  type="button"
+                  onClick={handleStartRecording}
+                  disabled={isUploadingAudio}
+                  className="p-2.5 bg-gradient-to-tr from-violet-600 to-fuchsia-600 hover:from-violet-500 hover:to-fuchsia-500 text-white rounded-xl transition-all shadow-md shadow-violet-600/10 active:scale-[0.96] disabled:opacity-40 disabled:cursor-not-allowed"
+                >
+                  {isUploadingAudio ? <Loader2 className="w-4 h-4 animate-spin" /> : <Mic className="w-4 h-4" />}
+                </button>
+              )}
             </div>
           </form>
         )}
