@@ -145,7 +145,8 @@ export default function AuthForm({ onAuthSuccess }: AuthFormProps) {
                 required
                 value={name}
                 onChange={(e) => setName(e.target.value)}
-                placeholder="Carlos Santana"
+                autoComplete="off"
+                placeholder="Nombre Apellido"
                 className="w-full bg-zinc-950/40 border border-zinc-800 focus:border-violet-500/80 focus:ring-2 focus:ring-violet-500/10 focus:outline-none rounded-xl py-3 pl-10 pr-4 text-zinc-100 placeholder-zinc-500 transition-all text-sm"
               />
             </div>
@@ -163,7 +164,8 @@ export default function AuthForm({ onAuthSuccess }: AuthFormProps) {
               required
               value={email}
               onChange={(e) => setEmail(e.target.value)}
-              placeholder="carlos@gmail.com"
+              autoComplete="email"
+              placeholder="ejemplo@gmail.com"
               className="w-full bg-zinc-950/40 border border-zinc-800 focus:border-violet-500/80 focus:ring-2 focus:ring-violet-500/10 focus:outline-none rounded-xl py-3 pl-10 pr-4 text-zinc-100 placeholder-zinc-500 transition-all text-sm"
             />
           </div>
@@ -180,6 +182,7 @@ export default function AuthForm({ onAuthSuccess }: AuthFormProps) {
               required
               value={password}
               onChange={(e) => setPassword(e.target.value)}
+              autoComplete={isLogin ? 'current-password' : 'new-password'}
               placeholder="••••••••"
               className="w-full bg-zinc-950/40 border border-zinc-800 focus:border-violet-500/80 focus:ring-2 focus:ring-violet-500/10 focus:outline-none rounded-xl py-3 pl-10 pr-4 text-zinc-100 placeholder-zinc-500 transition-all text-sm"
             />
