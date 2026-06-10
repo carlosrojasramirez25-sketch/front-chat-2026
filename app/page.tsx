@@ -118,6 +118,10 @@ export default function Home() {
   const conversationsRef = useRef<Conversation[]>([]);
   useEffect(() => { conversationsRef.current = conversations; }, [conversations]);
 
+  // ── callPeer ref — keeps socket handlers from reading stale state ─────────
+  const callPeerRef = useRef<{ userId: number; name: string; avatar?: string } | null>(null);
+  useEffect(() => { callPeerRef.current = callPeer; }, [callPeer]);
+
   // Notification permission is requested only via the bell button (user gesture)
 
   useEffect(() => {
@@ -312,7 +316,8 @@ export default function Home() {
       setCallStatus('incoming');
     };
 
-    const onCallAnswered = async (data: { answer: RTCSessionDescriptionInit }) => {
+    const onCallAnswered = async (data: { answer: RTCSessionDescriptionInit; responderId?: number }) => {
+      if (data.responderId !== undefined && data.responderId !== callPeerRef.current?.userId) return;
       if (peerRef.current) {
         await peerRef.current.setRemoteDescription(new RTCSessionDescription(data.answer));
         for (const c of iceCandidateQueueRef.current) {
@@ -323,16 +328,19 @@ export default function Home() {
       }
     };
 
-    const onCallRejected = () => {
+    const onCallRejected = (data?: { rejecterId?: number }) => {
+      if (data?.rejecterId !== undefined && data.rejecterId !== callPeerRef.current?.userId) return;
       cleanupCall();
     };
 
-    const onCallEnded = () => {
+    const onCallEnded = (data?: { enderId?: number }) => {
+      if (data?.enderId !== undefined && data.enderId !== callPeerRef.current?.userId) return;
       cleanupCall();
     };
 
-    const onIceCandidate = async (data: { candidate: RTCIceCandidateInit }) => {
+    const onIceCandidate = async (data: { candidate: RTCIceCandidateInit; senderId?: number }) => {
       if (!data.candidate) return;
+      if (data.senderId !== undefined && data.senderId !== callPeerRef.current?.userId) return;
       if (peerRef.current?.remoteDescription) {
         await peerRef.current.addIceCandidate(new RTCIceCandidate(data.candidate)).catch(() => {});
       } else {
