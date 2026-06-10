@@ -687,7 +687,7 @@ export default function ChatWindow({
   return (
     <div className={`flex-1 flex flex-col min-h-0 overflow-hidden bg-zinc-950/40 relative ${activeRoomId === null ? 'hidden md:flex' : 'flex'}`}>
       {/* Header */}
-      <div className="h-20 border-b border-zinc-900 px-6 flex items-center justify-between bg-zinc-950/80 backdrop-blur-md shrink-0">
+      <div className="h-14 border-b border-zinc-900 px-4 flex items-center justify-between bg-zinc-950/80 backdrop-blur-md shrink-0">
         <div className="flex items-center gap-3 min-w-0 flex-1">
           {onBack && (
             <button
@@ -1008,7 +1008,7 @@ export default function ChatWindow({
       </div>
 
       {/* Input panel */}
-      <div className="p-4 border-t border-zinc-900 bg-zinc-950/80 shrink-0 relative">
+      <div className="p-2 border-t border-zinc-900 bg-zinc-950/80 shrink-0 relative">
         <input
           ref={fileInputRef}
           type="file"
