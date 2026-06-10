@@ -3,6 +3,14 @@
 :root {
   --background: #09090b;
   --foreground: #fafafa;
+  /* Panel overlays: always a dark glass regardless of theme */
+  --panel-bg: rgba(9, 9, 11, 0.75);
+  --panel-border: rgba(255, 255, 255, 0.06);
+}
+
+html.light {
+  --panel-bg: rgba(9, 9, 11, 0.45);
+  --panel-border: rgba(0, 0, 0, 0.10);
 }
 
 /* Light mode: flip zinc scale so dark bg/text classes invert naturally */

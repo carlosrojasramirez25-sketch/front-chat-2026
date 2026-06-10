@@ -685,7 +685,7 @@ export default function ChatWindow({
   const typingArray = Object.values(typingUsers);
 
   return (
-    <div className={`flex-1 flex flex-col min-h-0 overflow-hidden bg-zinc-950/40 relative ${activeRoomId === null ? 'hidden md:flex' : 'flex'}`}>
+    <div className={`flex-1 flex flex-col min-h-0 overflow-hidden relative ${activeRoomId === null ? 'hidden md:flex' : 'flex'}`} style={{ ...getChatBgStyle(chatBg), backgroundColor: chatBg ? undefined : 'var(--color-zinc-950)' }}>
       {/* Header */}
       <div className="h-14 border-b border-zinc-900 px-4 flex items-center justify-between bg-zinc-950/80 backdrop-blur-md shrink-0">
         <div className="flex items-center gap-3 min-w-0 flex-1">
@@ -876,7 +876,7 @@ export default function ChatWindow({
       <input ref={bgImageInputRef} type="file" accept="image/*" className="hidden" onChange={handleBgImageUpload} />
 
       {/* Messages */}
-      <div className="flex-1 min-h-0 overflow-y-auto px-4 py-6 space-y-6 scrollbar-thin overflow-x-hidden" style={getChatBgStyle(chatBg)}>
+      <div className="flex-1 min-h-0 overflow-y-auto px-4 py-6 space-y-6 scrollbar-thin overflow-x-hidden">
 
         {loadingHistory && (
           <div className="flex justify-center py-8">
@@ -1008,7 +1008,7 @@ export default function ChatWindow({
       </div>
 
       {/* Input panel */}
-      <div className="p-2 border-t border-zinc-900 bg-zinc-950/80 shrink-0 relative">
+      <div className="p-2 border-t shrink-0 relative backdrop-blur-md" style={{ background: 'var(--panel-bg)', borderColor: 'var(--panel-border)' }}>
         <input
           ref={fileInputRef}
           type="file"
