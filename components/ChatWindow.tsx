@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect, useRef } from 'react';
-import { Send, Hash, CornerDownLeft, MessageSquare, AlertCircle, Loader2, ChevronLeft, MoreHorizontal, Pencil, Trash2, Check, X, ImagePlus, Camera, Sticker, Reply, Phone, Mic, Play, Pause, Palette } from 'lucide-react';
+import { Send, Hash, MessageSquare, AlertCircle, Loader2, ChevronLeft, MoreHorizontal, Pencil, Trash2, Check, X, Paperclip, ImagePlus, Camera, Sticker, Reply, Phone, Mic, Play, Pause, Palette } from 'lucide-react';
 import { Socket } from 'socket.io-client';
 import type { Conversation } from '@/app/page';
 
@@ -1124,89 +1124,74 @@ export default function ChatWindow({
             </button>
           </div>
         ) : (
-          <form onSubmit={handleSendMessage} className="relative flex items-end gap-2 bg-zinc-900/50 border border-zinc-800 rounded-2xl p-2 focus-within:border-violet-500/80 focus-within:ring-2 focus-within:ring-violet-500/10 transition-all">
-            {/* Image / Camera unified button */}
-            <div ref={imageMenuRef} className="relative shrink-0 self-end mb-0.5">
+          <form onSubmit={handleSendMessage} className="relative flex items-center gap-2">
+            {/* Pill */}
+            <div className="flex-1 flex items-center gap-1 bg-zinc-900/70 border border-zinc-800 rounded-full px-3 py-1.5 focus-within:border-violet-500/50 transition-all">
+              {/* Sticker */}
               <button
                 type="button"
-                onClick={() => setShowImageMenu((v) => !v)}
+                onClick={() => setShowStickerPicker((v) => !v)}
                 disabled={isUploadingImage || isUploadingAudio}
-                className={`p-2 rounded-xl transition-all disabled:opacity-40 disabled:cursor-not-allowed ${showImageMenu ? 'bg-violet-600 text-white' : 'bg-zinc-800 text-violet-400 hover:bg-violet-600 hover:text-white'}`}
-                title="Foto"
+                className={`p-1.5 rounded-full transition-all shrink-0 disabled:opacity-40 disabled:cursor-not-allowed ${showStickerPicker ? 'text-violet-400' : 'text-zinc-500 hover:text-violet-400'}`}
+                title="Stickers"
               >
-                <ImagePlus className="w-5 h-5" />
+                <Sticker className="w-5 h-5" />
               </button>
-              {showImageMenu && (
-                <div className="absolute bottom-full left-0 mb-2 bg-zinc-900 border border-zinc-800 rounded-xl shadow-2xl overflow-hidden z-50 min-w-[150px]">
-                  <button
-                    type="button"
-                    onClick={() => { setShowImageMenu(false); fileInputRef.current?.click(); }}
-                    className="flex items-center gap-2.5 w-full px-3 py-2.5 text-sm text-zinc-300 hover:bg-zinc-800 hover:text-white transition-colors"
-                  >
-                    <ImagePlus className="w-4 h-4 text-violet-400" />
-                    Galería
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => { setShowImageMenu(false); cameraInputRef.current?.click(); }}
-                    className="flex items-center gap-2.5 w-full px-3 py-2.5 text-sm text-zinc-300 hover:bg-zinc-800 hover:text-white transition-colors"
-                  >
-                    <Camera className="w-4 h-4 text-violet-400" />
-                    Tomar foto
-                  </button>
-                </div>
-              )}
+
+              {/* Textarea */}
+              <textarea
+                ref={textareaRef}
+                value={inputValue}
+                onChange={handleInputChange}
+                onKeyDown={handleKeyDown}
+                placeholder={imageFile ? 'Caption...' : 'Mensaje...'}
+                rows={1}
+                disabled={isUploadingImage || isUploadingAudio}
+                className="flex-1 max-h-32 bg-transparent border-0 focus:ring-0 focus:outline-none py-1.5 text-sm text-zinc-100 placeholder-zinc-500 resize-none overflow-y-auto disabled:opacity-50"
+              />
+
+              {/* Attachment (gallery) */}
+              <button
+                type="button"
+                onClick={() => fileInputRef.current?.click()}
+                disabled={isUploadingImage || isUploadingAudio}
+                className="p-1.5 text-zinc-500 hover:text-violet-400 rounded-full transition-all shrink-0 disabled:opacity-40 disabled:cursor-not-allowed"
+                title="Adjuntar imagen"
+              >
+                <Paperclip className="w-5 h-5" />
+              </button>
+
+              {/* Camera */}
+              <button
+                type="button"
+                onClick={() => cameraInputRef.current?.click()}
+                disabled={isUploadingImage || isUploadingAudio}
+                className="p-1.5 text-zinc-500 hover:text-violet-400 rounded-full transition-all shrink-0 disabled:opacity-40 disabled:cursor-not-allowed"
+                title="Tomar foto"
+              >
+                <Camera className="w-5 h-5" />
+              </button>
             </div>
 
-            {/* Sticker button */}
-            <button
-              type="button"
-              onClick={() => setShowStickerPicker((v) => !v)}
-              disabled={isUploadingImage || isUploadingAudio}
-              className={`p-2 rounded-xl transition-all shrink-0 self-end mb-0.5 disabled:opacity-40 disabled:cursor-not-allowed ${showStickerPicker ? 'bg-violet-600 text-white' : 'bg-zinc-800 text-violet-400 hover:bg-violet-600 hover:text-white'}`}
-              title="Stickers"
-            >
-              <Sticker className="w-5 h-5" />
-            </button>
-
-            <textarea
-              ref={textareaRef}
-              value={inputValue}
-              onChange={handleInputChange}
-              onKeyDown={handleKeyDown}
-              placeholder={imageFile ? 'Agregar caption (opcional)...' : 'Mensaje...'}
-              rows={1}
-              disabled={isUploadingImage || isUploadingAudio}
-              className="flex-1 max-h-32 bg-transparent border-0 focus:ring-0 focus:outline-none py-2 px-3 text-sm text-zinc-100 placeholder-zinc-550 resize-none overflow-y-auto disabled:opacity-50"
-            />
-
-            <div className="flex items-center gap-2 pr-1.5 pb-1">
-              {(inputValue.trim() || imageFile) && (
-                <span className="text-[10px] text-zinc-600 hidden md:flex items-center gap-1 bg-zinc-950/80 border border-zinc-800 py-1 px-2 rounded-lg">
-                  <span>Enter to send</span>
-                  <CornerDownLeft className="w-2.5 h-2.5" />
-                </span>
-              )}
-
-              {inputValue.trim() || imageFile ? (
-                <button
-                  type="submit"
-                  disabled={isUploadingImage || isUploadingAudio}
-                  className="p-2.5 bg-gradient-to-tr from-violet-600 to-fuchsia-600 hover:from-violet-500 hover:to-fuchsia-500 disabled:from-zinc-900 disabled:to-zinc-900 text-white disabled:text-zinc-600 rounded-xl transition-all shadow-md shadow-violet-600/10 active:scale-[0.96] disabled:cursor-not-allowed"
-                >
-                  {isUploadingImage || isUploadingAudio ? <Loader2 className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4" />}
-                </button>
-              ) : (
-                <button
-                  type="button"
-                  onClick={handleStartRecording}
-                  disabled={isUploadingAudio}
-                  className="p-2.5 bg-gradient-to-tr from-violet-600 to-fuchsia-600 hover:from-violet-500 hover:to-fuchsia-500 text-white rounded-xl transition-all shadow-md shadow-violet-600/10 active:scale-[0.96] disabled:opacity-40 disabled:cursor-not-allowed"
-                >
-                  {isUploadingAudio ? <Loader2 className="w-4 h-4 animate-spin" /> : <Mic className="w-4 h-4" />}
-                </button>
-              )}
-            </div>
+            {/* Circle send / mic */}
+            {inputValue.trim() || imageFile ? (
+              <button
+                type="submit"
+                disabled={isUploadingImage || isUploadingAudio}
+                className="w-11 h-11 rounded-full bg-gradient-to-tr from-violet-600 to-fuchsia-600 hover:from-violet-500 hover:to-fuchsia-500 text-white flex items-center justify-center shrink-0 shadow-lg shadow-violet-600/25 active:scale-95 transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                {isUploadingImage || isUploadingAudio ? <Loader2 className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4" />}
+              </button>
+            ) : (
+              <button
+                type="button"
+                onClick={handleStartRecording}
+                disabled={isUploadingAudio}
+                className="w-11 h-11 rounded-full bg-gradient-to-tr from-violet-600 to-fuchsia-600 hover:from-violet-500 hover:to-fuchsia-500 text-white flex items-center justify-center shrink-0 shadow-lg shadow-violet-600/25 active:scale-95 transition-all disabled:opacity-40 disabled:cursor-not-allowed"
+              >
+                {isUploadingAudio ? <Loader2 className="w-4 h-4 animate-spin" /> : <Mic className="w-5 h-5" />}
+              </button>
+            )}
           </form>
         )}
       </div>
