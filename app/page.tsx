@@ -141,6 +141,24 @@ export default function Home() {
   const remoteAudioRef = useRef<HTMLAudioElement | null>(null);
   const iceCandidateQueueRef = useRef<RTCIceCandidateInit[]>([]);
 
+  // ── Conversations ref (always fresh inside socket handlers) ──────────────
+  const conversationsRef = useRef<Conversation[]>([]);
+  useEffect(() => { conversationsRef.current = conversations; }, [conversations]);
+
+  // ── Browser notifications ─────────────────────────────────────────────────
+  useEffect(() => {
+    if (!user) return;
+    if ('Notification' in window && Notification.permission === 'default') {
+      Notification.requestPermission();
+    }
+  }, [user]);
+
+  useEffect(() => {
+    const onVisible = () => { if (!document.hidden) document.title = '&C — CHAT'; };
+    document.addEventListener('visibilitychange', onVisible);
+    return () => document.removeEventListener('visibilitychange', onVisible);
+  }, []);
+
   // ── User presence ─────────────────────────────────────────────────────────
   const [userStatuses, setUserStatuses] = useState<Record<number, { status: string; lastSeenAt: string | null }>>({});
 
@@ -274,6 +292,24 @@ export default function Home() {
           )
           .sort((a, b) => new Date(b.updatedAt ?? 0).getTime() - new Date(a.updatedAt ?? 0).getTime()),
       );
+
+      // Browser notification when tab is hidden and message is from someone else
+      if (document.hidden && msg.sender_id !== user?.id) {
+        const convo = conversationsRef.current.find((c) => c.id === msg.conversation_id);
+        const senderName = convo?.participant.name ?? 'Nuevo mensaje';
+        document.title = `(1) &C — CHAT`;
+        if ('Notification' in window && Notification.permission === 'granted') {
+          const n = new Notification(senderName, {
+            body: msg.content || '📎 Archivo',
+            icon: '/favicon.ico',
+            tag: `conv-${msg.conversation_id}`,
+          });
+          n.onclick = () => {
+            window.focus();
+            setActiveRoomId(msg.conversation_id);
+          };
+        }
+      }
     };
 
     const onUserStatusChanged = (data: { userId: number; status: string; last_seen_at: string | null }) => {
