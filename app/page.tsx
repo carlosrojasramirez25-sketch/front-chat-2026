@@ -46,33 +46,6 @@ function sanitizeAvatarUrl(url: string | null | undefined): string | null {
   return null;
 }
 
-function getNumericId(emailStr: string): number {
-  let hash = 0;
-  for (let i = 0; i < emailStr.length; i++) {
-    hash = emailStr.charCodeAt(i) + ((hash << 5) - hash);
-  }
-  return Math.abs(hash % 10000);
-}
-
-function decodeToken(jwtToken: string): any {
-  try {
-    const parts = jwtToken.split('.');
-    if (parts.length === 3) {
-      const base64 = parts[1].replace(/-/g, '+').replace(/_/g, '/');
-      const jsonPayload = decodeURIComponent(
-        atob(base64)
-          .split('')
-          .map((c) => '%' + ('00' + c.charCodeAt(0).toString(16)).slice(-2))
-          .join(''),
-      );
-      return JSON.parse(jsonPayload);
-    }
-  } catch {
-    // ignore
-  }
-  return null;
-}
-
 function normalizeUrl(url: string) {
   let u = url.trim();
   if (!u.startsWith('http://') && !u.startsWith('https://')) u = `http://${u}`;
@@ -197,37 +170,35 @@ export default function Home() {
     }
   }, []);
 
-  // ── Hydration / localStorage restore ─────────────────────────────────────
+  // ── Hydration — restore session via refresh token cookie ─────────────────
   useEffect(() => {
     setMounted(true);
 
-    const storedToken = localStorage.getItem('chat_token');
+    const tryRestore = async () => {
+      try {
+        const base = normalizeUrl(apiUrl);
+        const res = await fetch(`${base}/api/auth/refresh`, {
+          method: 'POST',
+          credentials: 'include',
+        });
+        if (!res.ok) return;
+        const data = await res.json();
+        if (!data.accessToken || !data.user) return;
 
-    if (storedToken) {
-      const decoded = decodeToken(storedToken);
-      if (decoded && decoded.exp * 1000 > Date.now()) {
-        const uid = Number(decoded.id || decoded.userId || decoded.sub || getNumericId(decoded.email || ''));
-        setToken(storedToken);
-        const userData: User = {
-          name: decoded.name || decoded.email?.split('@')[0] || 'User',
-          email: decoded.email || 'user@example.com',
-          id: uid,
-        };
-        setUser(userData);
-        setAliases(loadAliasesFromStorage(uid));
-        setContactAvatars(loadContactAvatarsFromStorage(uid));
-        loadConversations(uid, storedToken, apiUrl);
-        registerPush(uid, apiUrl, storedToken);
+        setToken(data.accessToken);
+        setUser(data.user);
+        setAliases(loadAliasesFromStorage(data.user.id));
+        setContactAvatars(loadContactAvatarsFromStorage(data.user.id));
+        loadConversations(data.user.id, data.accessToken, apiUrl);
+        registerPush(data.user.id, apiUrl, data.accessToken);
 
         const storedActiveRoom = localStorage.getItem('chat_active_room_id');
-        if (storedActiveRoom) {
-          setActiveRoomId(Number(storedActiveRoom));
-        }
-      } else {
-        localStorage.removeItem('chat_token');
-        localStorage.removeItem('chat_active_room_id');
+        if (storedActiveRoom) setActiveRoomId(Number(storedActiveRoom));
+      } catch {
+        // No active session — show login
       }
-    }
+    };
+    tryRestore();
   }, [loadConversations]);
 
   // ── WebRTC cleanup (defined before socket useEffect so handlers can reference it) ──
@@ -556,7 +527,7 @@ export default function Home() {
   };
 
   const handleAuthSuccess = (newToken: string, userData: User) => {
-    localStorage.setItem('chat_token', newToken);
+    // Token lives in state only (15 min). Refresh token is in httpOnly cookie.
     setToken(newToken);
     setUser(userData);
     setAliases(loadAliasesFromStorage(userData.id));
@@ -565,12 +536,17 @@ export default function Home() {
     registerPush(userData.id, apiUrl, newToken);
   };
 
-  const handleLogout = () => {
+  const handleLogout = async () => {
+    // Invalidate refresh token on server and clear the httpOnly cookie
+    try {
+      const base = normalizeUrl(apiUrl);
+      await fetch(`${base}/api/auth/logout`, { method: 'POST', credentials: 'include' });
+    } catch {}
+
     if (socketRef.current) {
       if (activeRoomId !== null) socketRef.current.emit('leaveRoom', activeRoomId);
       socketRef.current.disconnect();
     }
-    localStorage.removeItem('chat_token');
     localStorage.removeItem('chat_active_room_id');
     setToken(null);
     setUser(null);

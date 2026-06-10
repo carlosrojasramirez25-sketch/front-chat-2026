@@ -10,10 +10,10 @@ function urlBase64ToUint8Array(base64String: string): Uint8Array<ArrayBuffer> {
 
 async function fetchVapidKey(base: string, token: string): Promise<string> {
   const res = await fetch(`${base}/api/push/vapid-public-key`, {
+    credentials: 'include',
     headers: { Authorization: `Bearer ${token}` },
   });
   const data = await res.json();
-  console.log('[Push] VAPID key from backend:', data.publicKey?.slice(0, 20) + '...');
   return data.publicKey;
 }
 
@@ -27,21 +27,16 @@ export function getPushPermission(): PushStatus {
 
 export async function registerPush(userId: number, apiUrl: string, token: string): Promise<void> {
   if (typeof window === 'undefined') return;
-  if (!('serviceWorker' in navigator) || !('PushManager' in window)) {
-    console.warn('[Push] Not supported in this browser');
-    return;
-  }
+  if (!('serviceWorker' in navigator) || !('PushManager' in window)) return;
   if (Notification.permission !== 'granted') return;
 
   try {
     const base = apiUrl.trim().replace(/\/$/, '');
     const vapidKey = await fetchVapidKey(base, token);
 
-    console.log('[Push] Registering SW...');
     const registration = await navigator.serviceWorker.register('/sw.js');
     await navigator.serviceWorker.ready;
 
-    // Always force a fresh subscription so the DB never has a stale endpoint
     const existing = await registration.pushManager.getSubscription();
     if (existing) await existing.unsubscribe();
 
@@ -49,14 +44,13 @@ export async function registerPush(userId: number, apiUrl: string, token: string
       userVisibleOnly: true,
       applicationServerKey: urlBase64ToUint8Array(vapidKey),
     });
-    console.log('[Push] Subscription:', subscription.endpoint.slice(0, 60) + '...');
 
-    const res = await fetch(`${base}/api/push/subscribe`, {
+    await fetch(`${base}/api/push/subscribe`, {
       method: 'POST',
+      credentials: 'include',
       headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
       body: JSON.stringify({ userId, subscription }),
     });
-    console.log('[Push] Saved:', res.status);
   } catch (err) {
     console.error('[Push] registerPush error:', err);
   }
@@ -68,7 +62,6 @@ export async function enablePush(userId: number, apiUrl: string, token: string):
 
   try {
     const permission = await Notification.requestPermission();
-    console.log('[Push] Permission:', permission);
     if (permission !== 'granted') return permission as PushStatus;
 
     const base = apiUrl.trim().replace(/\/$/, '');
@@ -84,14 +77,13 @@ export async function enablePush(userId: number, apiUrl: string, token: string):
       userVisibleOnly: true,
       applicationServerKey: urlBase64ToUint8Array(vapidKey),
     });
-    console.log('[Push] New subscription:', subscription.endpoint.slice(0, 60) + '...');
 
-    const res = await fetch(`${base}/api/push/subscribe`, {
+    await fetch(`${base}/api/push/subscribe`, {
       method: 'POST',
+      credentials: 'include',
       headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
       body: JSON.stringify({ userId, subscription }),
     });
-    console.log('[Push] Saved:', res.status, await res.text());
     return 'granted';
   } catch (err) {
     console.error('[Push] enablePush error:', err);

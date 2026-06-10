@@ -17,14 +17,6 @@ export default function AuthForm({ onAuthSuccess }: AuthFormProps) {
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
 
-  const getNumericId = (emailStr: string): number => {
-    let hash = 0;
-    for (let i = 0; i < emailStr.length; i++) {
-      hash = emailStr.charCodeAt(i) + ((hash << 5) - hash);
-    }
-    return Math.abs(hash % 10000);
-  };
-
   const handleAuth = async (e: React.FormEvent) => {
     e.preventDefault();
     setError(null);
@@ -38,6 +30,7 @@ export default function AuthForm({ onAuthSuccess }: AuthFormProps) {
     try {
       const response = await fetch(`${API_URL}${endpoint}`, {
         method: 'POST',
+        credentials: 'include',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload),
       });
@@ -48,37 +41,14 @@ export default function AuthForm({ onAuthSuccess }: AuthFormProps) {
         throw new Error(data.message || (isLogin ? 'Error al iniciar sesión' : 'Error al registrarse'));
       }
 
-      if (!data.payloadJWT) {
-        throw new Error('No JWT token received from server');
+      if (!data.accessToken || !data.user) {
+        throw new Error('Respuesta del servidor inválida');
       }
 
-      const token = data.payloadJWT;
-
-      let decoded: any = {};
-      try {
-        const parts = token.split('.');
-        if (parts.length === 3) {
-          const base64 = parts[1].replace(/-/g, '+').replace(/_/g, '/');
-          const jsonPayload = decodeURIComponent(
-            atob(base64)
-              .split('')
-              .map((c) => '%' + ('00' + c.charCodeAt(0).toString(16)).slice(-2))
-              .join(''),
-          );
-          decoded = JSON.parse(jsonPayload);
-        }
-      } catch (err) {
-        console.error('Error decoding token:', err);
-      }
-
-      const userName = decoded.name || name || email.split('@')[0];
-      const userEmail = decoded.email || email;
-      const userId = decoded.id || decoded.userId || decoded.sub || getNumericId(userEmail);
-
-      onAuthSuccess(token, {
-        name: userName,
-        email: userEmail,
-        id: Number(userId),
+      onAuthSuccess(data.accessToken, {
+        name: data.user.name || email.split('@')[0],
+        email: data.user.email,
+        id: Number(data.user.id),
       });
     } catch (err: any) {
       setError(err.message || 'Ocurrió un error durante la autenticación');

@@ -23,6 +23,7 @@ export const getSocket = (url: string, userId?: number, token?: string): Socket 
     socket = io(cleanUrl, {
       autoConnect: false,
       transports: ['websocket'],
+      withCredentials: true,
       query: userId ? { userId: String(userId) } : undefined,
       auth: token ? { token } : undefined,
     });
