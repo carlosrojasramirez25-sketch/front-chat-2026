@@ -41,6 +41,10 @@ export async function registerPush(userId: number, apiUrl: string, token: string
     const registration = await navigator.serviceWorker.register('/sw.js');
     await navigator.serviceWorker.ready;
 
+    // Always force a fresh subscription so the DB never has a stale endpoint
+    const existing = await registration.pushManager.getSubscription();
+    if (existing) await existing.unsubscribe();
+
     const subscription = await registration.pushManager.subscribe({
       userVisibleOnly: true,
       applicationServerKey: urlBase64ToUint8Array(vapidKey),

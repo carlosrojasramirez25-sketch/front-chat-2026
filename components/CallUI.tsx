@@ -44,7 +44,14 @@ export default function CallUI({
   }, [localStream]);
 
   useEffect(() => {
-    if (remoteVideoRef.current && remoteStream) remoteVideoRef.current.srcObject = remoteStream;
+    if (!remoteVideoRef.current || !remoteStream) return;
+    remoteVideoRef.current.srcObject = remoteStream;
+    // Re-attach when video track arrives after audio (same stream reference)
+    const onAddTrack = () => {
+      if (remoteVideoRef.current) remoteVideoRef.current.srcObject = remoteStream;
+    };
+    remoteStream.addEventListener('addtrack', onAddTrack);
+    return () => remoteStream.removeEventListener('addtrack', onAddTrack);
   }, [remoteStream]);
 
   const toggleCamera = () => {
