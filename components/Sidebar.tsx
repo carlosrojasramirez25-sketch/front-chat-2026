@@ -658,7 +658,7 @@ export default function Sidebar({
                             />
                           </div>
                           <div className="min-w-0 flex-1">
-                            <p className={`text-sm font-semibold truncate ${isActive ? 'text-white' : 'text-zinc-300'}`}>
+                            <p className={`text-base font-semibold truncate ${isActive ? 'text-white' : 'text-zinc-300'}`}>
                               {displayName}
                               {aliases[convo.id] && (
                                 <span className="ml-1 text-[9px] text-violet-400 font-normal">(alias)</span>
