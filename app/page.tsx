@@ -417,13 +417,17 @@ export default function Home() {
     };
     peer.ontrack = (e) => {
       const stream = e.streams[0];
-      if (e.track.kind === 'audio' && remoteAudioRef.current) {
+      if (e.track.kind === 'audio' && remoteAudioRef.current && stream) {
         remoteAudioRef.current.srcObject = stream;
       }
-      // New MediaStream reference on every track so CallUI's useEffect always re-runs.
-      // Without this, audio arrives first → same object → React skips re-render when
-      // the video track arrives → video element never gets the video track.
-      setRemoteStream(new MediaStream(stream.getTracks()));
+      // Accumulate tracks from e.track (not stream.getTracks() which may be empty at fire time).
+      // Functional update creates a new MediaStream reference each time a track is added,
+      // forcing CallUI's useEffect to re-run and re-attach the video element.
+      setRemoteStream(prev => {
+        const existing = prev ? prev.getTracks() : [];
+        if (existing.find(t => t.id === e.track.id)) return prev;
+        return new MediaStream([...existing, e.track]);
+      });
     };
     return peer;
   };
