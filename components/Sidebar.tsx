@@ -72,6 +72,17 @@ function formatLastSeen(lastSeenAt: string | null): string {
   return `Hace ${Math.floor(diffSec / 86400)} d`;
 }
 
+function formatChatTime(iso?: string): string {
+  if (!iso) return '';
+  const d = new Date(iso);
+  const now = new Date();
+  const diffDays = Math.floor((now.getTime() - d.getTime()) / 86400000);
+  if (diffDays === 0) return d.toLocaleTimeString('es', { hour: '2-digit', minute: '2-digit' });
+  if (diffDays === 1) return 'Ayer';
+  if (diffDays < 7) return d.toLocaleDateString('es', { weekday: 'short' });
+  return d.toLocaleDateString('es', { day: '2-digit', month: '2-digit', year: '2-digit' });
+}
+
 function normalizeUrl(url: string) {
   let u = url.trim();
   if (!u.startsWith('http://') && !u.startsWith('https://')) u = `http://${u}`;
@@ -630,18 +641,17 @@ export default function Sidebar({
 
                     {/* ── Normal row ── */}
                     {!isConfirmingDelete && !isEditingAlias && (
-                      <div className={`flex items-center gap-2 pl-3 pr-1 py-2.5 rounded-xl transition-all duration-200 ${
-                        isActive
-                          ? 'bg-gradient-to-r from-violet-600/20 to-fuchsia-600/10 border border-violet-500/20 shadow-sm'
-                          : 'hover:bg-zinc-900/50 border border-transparent'
+                      <div className={`flex items-center gap-0 transition-colors duration-150 ${
+                        isActive ? 'bg-zinc-800/80' : 'hover:bg-zinc-900/70'
                       }`}>
                         {/* Avatar + info (click to open) */}
                         <button
                           onClick={() => onRoomSelect(convo.id)}
-                          className="flex items-center gap-3 flex-1 min-w-0 text-left"
+                          className="flex items-center gap-3 flex-1 min-w-0 text-left pl-3 pr-1 py-3"
                         >
+                          {/* Avatar */}
                           <div className="relative shrink-0">
-                            <div className={`w-9 h-9 rounded-xl overflow-hidden flex items-center justify-center font-bold text-xs shrink-0 ${!contactAvatars[convo.participant.id] && !convo.participant.avatar ? (isActive ? 'bg-gradient-to-tr from-violet-600 to-fuchsia-600 text-white' : 'bg-zinc-800 text-zinc-400') : ''}`}>
+                            <div className={`w-14 h-14 rounded-xl overflow-hidden flex items-center justify-center font-bold text-base shrink-0 ${!contactAvatars[convo.participant.id] && !convo.participant.avatar ? (isActive ? 'bg-gradient-to-tr from-violet-600 to-fuchsia-600 text-white' : 'bg-zinc-700 text-zinc-300') : ''}`}>
                               {(contactAvatars[convo.participant.id] || convo.participant.avatar) ? (
                                 <img
                                   src={contactAvatars[convo.participant.id] || convo.participant.avatar}
@@ -653,25 +663,30 @@ export default function Sidebar({
                               )}
                             </div>
                             <span
-                              className={`absolute -bottom-0.5 -right-0.5 w-2.5 h-2.5 rounded-full border-2 border-zinc-950 ${isOnline ? 'bg-emerald-400' : 'bg-zinc-600'}`}
+                              className={`absolute -bottom-0.5 -right-0.5 w-3 h-3 rounded-full border-2 border-zinc-950 ${isOnline ? 'bg-emerald-400' : 'bg-zinc-600'}`}
                               title={isOnline ? 'En línea' : formatLastSeen(userStatuses[convo.participant.id]?.lastSeenAt ?? null)}
                             />
                           </div>
-                          <div className="min-w-0 flex-1">
-                            <p className={`text-base font-semibold truncate ${isActive ? 'text-white' : 'text-zinc-300'}`}>
-                              {displayName}
-                              {aliases[convo.id] && (
-                                <span className="ml-1 text-[9px] text-violet-400 font-normal">(alias)</span>
-                              )}
-                            </p>
-                            <p className="text-[10px] text-zinc-500 truncate">
+
+                          {/* Name + timestamp + last message */}
+                          <div className="min-w-0 flex-1 border-b border-zinc-800/60 pb-3">
+                            <div className="flex items-center justify-between gap-2 mb-0.5">
+                              <p className="text-base font-semibold truncate leading-snug text-zinc-100">
+                                {displayName}
+                                {aliases[convo.id] && (
+                                  <span className="ml-1 text-[9px] text-violet-400 font-normal">(alias)</span>
+                                )}
+                              </p>
+                              <span className="text-xs text-zinc-500 shrink-0 whitespace-nowrap">{formatChatTime(convo.updatedAt)}</span>
+                            </div>
+                            <p className="text-sm text-zinc-400 truncate leading-snug">
                               {convo.lastMessage ?? convo.participant?.email ?? `#${convo.id}`}
                             </p>
                           </div>
                         </button>
 
                         {/* Action buttons — visible on hover or when active */}
-                        <div className={`flex items-center gap-0.5 shrink-0 transition-opacity ${isActive ? 'opacity-100' : 'opacity-0 group-hover:opacity-100'}`}>
+                        <div className={`flex items-center gap-0.5 shrink-0 pr-1 transition-opacity ${isActive ? 'opacity-100' : 'opacity-0 group-hover:opacity-100'}`}>
                           {/* Rename */}
                           <button
                             onClick={(e) => {
