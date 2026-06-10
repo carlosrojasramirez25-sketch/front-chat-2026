@@ -154,9 +154,22 @@ export default function Home() {
   }, [user]);
 
   useEffect(() => {
-    const onVisible = () => { if (!document.hidden) document.title = '&C — CHAT'; };
-    document.addEventListener('visibilitychange', onVisible);
-    return () => document.removeEventListener('visibilitychange', onVisible);
+    const onVisibilityChange = () => {
+      if (document.hidden) {
+        // Leave the conversation room so the backend sends push notifications
+        if (activeRoomIdRef.current !== null) {
+          socketRef.current?.emit('leaveRoom', activeRoomIdRef.current);
+        }
+      } else {
+        // Rejoin the conversation room and reset title
+        document.title = '&C — CHAT';
+        if (activeRoomIdRef.current !== null) {
+          socketRef.current?.emit('joinRoom', activeRoomIdRef.current);
+        }
+      }
+    };
+    document.addEventListener('visibilitychange', onVisibilityChange);
+    return () => document.removeEventListener('visibilitychange', onVisibilityChange);
   }, []);
 
   // ── User presence ─────────────────────────────────────────────────────────
