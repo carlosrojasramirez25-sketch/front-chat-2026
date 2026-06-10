@@ -1008,7 +1008,7 @@ export default function ChatWindow({
       </div>
 
       {/* Input panel */}
-      <div className="p-2 border-t shrink-0 relative backdrop-blur-md" style={{ background: 'var(--panel-bg)', borderColor: 'var(--panel-border)' }}>
+      <div className="p-2 pb-3 shrink-0 relative">
         <input
           ref={fileInputRef}
           type="file"
