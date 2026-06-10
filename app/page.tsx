@@ -258,7 +258,7 @@ export default function Home() {
       return;
     }
 
-    const socketInstance = getSocket(socketUrl, user.id);
+    const socketInstance = getSocket(socketUrl, user.id, token ?? undefined);
     socketRef.current = socketInstance;
     socketInstance.connect();
 
@@ -405,7 +405,7 @@ export default function Home() {
       setSocketConnected(false);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [mounted, user, socketUrl]);
+  }, [mounted, user, socketUrl, token]);
 
   // ── WebRTC helpers ────────────────────────────────────────────────────────
   const createPeer = (targetUserId: number) => {
